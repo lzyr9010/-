@@ -1,0 +1,1889 @@
+<!DOCTYPE html>
+<html class="
+">
+  <head>
+    <meta name="wechat-enable-text-zoom-em" content="true">
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=0,viewport-fit=cover">
+
+
+
+
+
+<meta name="format-detection" content="telephone=no">
+<script  nonce="1176578612" reportloaderror>try{document.getElementsByTagName('html').item(0).style.webkitTextSizeAdjust=JSON.parse(window.__wxWebEnv.getEnv()).fontScale+'%'}catch(e){}</script>
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+  window.logs = { pagetime: {} };
+  window.logs.pagetime['html_begin'] = (+new Date());
+  window.LANG = "zh_CN"; // 页面语言 zh_CN en_US
+</script>
+
+    <script type="text/javascript" nonce="1176578612" reportloaderror>
+  /**
+   * 于2022-02-21重构vite
+   * 仅保留原有moon.js中上报相关的部分
+   * @author baakqiu
+   * @date 2022-02-21
+   */
+  
+  var WX_BJ_REPORT = window.WX_BJ_REPORT || {};
+  (function(_) {
+    if (_.BadJs) {
+      return;
+    }
+    //onerror上报名 
+    var BADJS_WIN_ERR = 'BadjsWindowError';
+    var extend = function(source, destination) {
+      for (var property in destination) {
+        source[property] = destination[property]
+      }
+      return source
+    }
+    /*
+      出错上报字段:mid name key  msg  stack file col line uin
+      mid 模块名
+      name 监控名
+      key 特征值
+      msg 额外信息
+    */
+    _.BadJs = {
+      uin: 0,
+      mid: "",
+      view: "wap",
+      _cache: {}, //上报_cache 同一mid name key 只会上报一次
+      _info: {}, // 打点记录 会写入msg帮助定位
+      _hookCallback: null,
+      ignorePath: true,
+      throw: function(e, extData) {
+        this.onError(e, extData);
+        throw e;
+      },
+      //接收异常并上报处理 如果有额外信息可以放在第二个参数_data中
+      // _data 只能覆盖上报协议的字段mid （name,key 不建议通过data覆盖） msg  stack file col line uin
+      onError: function(e, extData) {
+        try {
+          //标记已执行的throw
+          if (e.BADJS_EXCUTED == true) {
+            return;
+          }
+          e.BADJS_EXCUTED = true;
+          var data = errToData(e);
+          data.uin = this.uin;
+          data.mid = this.mid;
+          data.view = this.view;
+          data.cmdb_module = 'mmbizwap';
+          //data.msg = msg || data.msg;
+          if (!!extData) {
+            data = extend(data, extData);
+          }
+          //如果cid存在 将cid合并到key
+          if (data.cid) {
+            data.key = "[" + data.cid + "]:" + data.key;
+          }
+          
+          if (data._info) {
+            if (Object.prototype.toString.call(data._info) == "[object Object]") {
+              data.msg += " || info:" + JSON.stringify(data._info);
+            } else if (Object.prototype.toString.call(data._info) == "[object String]") {
+              data.msg += " || info:" + data._info;
+            } else {
+              data.msg += " || info:" + data._info;
+            }
+          }
+          if (typeof this._hookCallback == "function") {
+            if (this._hookCallback(data) === false) {
+              return
+            }
+          }
+          this._send(data);
+          return _.BadJs;
+        } catch (e) {
+          console.error(e);
+        }
+      },
+      winErr: function(event) {
+        if (event.error && event.error.BADJS_EXCUTED) {
+          return;
+        }
+        if (event.type === 'unhandledrejection') {
+          _.BadJs.onError(createError(event.type, event.reason, "", "", "", event.reason));
+        }else{
+          _.BadJs.onError(createError(BADJS_WIN_ERR, event.message, event.filename, event.lineno, event.colno, event.error));
+        }
+      },
+      init: function(uin, mid, view) {
+        this.uin = uin || this.uin;
+        this.mid = mid || this.mid;
+        this.view = view || this.view;
+        return _.BadJs;
+      },
+      //钩子函数
+      hook: function(fn) {
+        this._hookCallback = fn;
+        return _.BadJs;
+      },
+      _send: function(data) {
+        //hack uin mid
+        if (!data.mid) {
+          if (typeof window.PAGE_MID !== 'undefined' && window.PAGE_MID) {
+            data.mid = window.PAGE_MID;
+          } else {
+            return;
+          }
+        }
+        if (!data.uin) {
+          data.uin = window.user_uin || 0;
+        }
+        // 发送要去重 
+        var flag = [data.mid, data.name, data.key].join("|");
+        if (this._cache && this._cache[flag]) {
+          return
+        } else {
+          this._cache && (this._cache[flag] = true);
+          this._xhr(data);
+        }
+        return _.BadJs;
+      },
+      _xhr: function(data) {
+        //console.log(data);
+        var xmlobj;
+        if (window.ActiveXObject) {
+          try {
+            xmlobj = new ActiveXObject("Msxml2.XMLHTTP");
+          } catch (e) {
+            try {
+              xmlobj = new ActiveXObject("Microsoft.XMLHTTP");
+            } catch (E) {
+              xmlobj = false;
+            }
+          }
+        } else if (window.XMLHttpRequest) {
+          xmlobj = new XMLHttpRequest();
+        }
+        var param = "";
+        for (var key in data) {
+          if (key && data[key]) {
+            param += [key, "=", encodeURIComponent(data[key]), "&"].join("");
+          }
+        }
+        if (xmlobj && typeof xmlobj.open == "function") {
+          xmlobj.open("POST", "https://badjs.weixinbridge.com/report", true);
+          xmlobj.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+          xmlobj.onreadystatechange = function(status) {};
+          xmlobj.send(param.slice(0, -1));
+        } else {
+          var img = new Image();
+          img.src = "https://badjs.weixinbridge.com/report?" + param;
+        }
+      },
+      // key是特征值 默认上报msg就是key，也可以主动传msg包含更多上报信息 
+      report: function(name, key, data) {
+        this.onError(createError(name, key), data);
+        return this;
+      },
+      // 打点标记
+      mark: function(info) {
+        this._info = extend(this._info, info);
+      },
+      nocache: function() {
+        this._cache = false;
+        return _.BadJs;
+      }
+    }
+    function createError(name, msg, url, line, col, error) {
+      return {
+        name: name || "",
+        message: msg || "",
+        file: url || "",
+        line: line || "",
+        col: col || "",
+        stack: (error && error.stack) || "",
+      }
+    }
+    //将异常错误转换成上报协议支持的字段
+    /*
+    * 先取e对象上的file line col等字段
+    * 再解析e.statck
+    * name 错误大类 默认取badjs_try_err|badjs_win_err
+    * key  错误标识 e.message
+    * msg  错误信息 e.message
+    * stack 错误堆栈 e.stack
+    * file 错误发生的文件
+    * line 行
+    * col 列
+    * client_version
+    */
+    function errToData(e) {
+      var _stack = parseStack(e);
+      return {
+        name: e.name,
+        key: e.message,
+        msg: e.message,
+        stack: _stack.info,
+        file: _stack.file,
+        line: _stack.line,
+        col: _stack.col,
+        client_version: "",
+        _info: e._info
+      }
+    }
+    function parseStack(e) {
+      e._info = e._info || ""; // 当前错误的额外信息 最终上报到info
+      var stack = e.stack || "";
+      var _stack = {
+        info: stack,
+        file: e.file || "",
+        line: e.line || "",
+        col: e.col || "",
+      };
+      if (_stack.file == "") {
+        // 提取file line col
+        var stackArr = stack.split(/\bat\b/);
+        if (stackArr && stackArr[1]) {
+          var match = /(https?:\/\/[^\n]+)\:(\d+)\:(\d+)/.exec(stackArr[1]);
+          if (match) {
+            //若stack提取的file line col跟e中的属性不一致，以stack为准 但在e._info中记录原始数据
+            if (match[1] && match[1] != _stack.file) {
+              _stack.file && (e._info += " [file: " + _stack.file + " ]");
+              _stack.file = match[1];
+            }
+            if (match[2] && match[2] != _stack.line) {
+              _stack.line && (e._info += " [line: " + _stack.line + " ]");
+              _stack.line = match[2];
+            }
+            if (match[3] && match[3] != _stack.col) {
+              _stack.col && (e._info += " [col: " + _stack.col + " ]");
+              _stack.col = match[3];
+            }
+          }
+        }
+      }
+      //替换堆栈中的文件路径 combojs太长
+      if (_stack && _stack.file && _stack.file.length > 0) {
+        _stack.info = _stack.info.replace(new RegExp(_stack.file.split("?")[0], "gi"), "__FILE__")
+      }
+      //堆栈路径只保存文件名
+      if (_.BadJs.ignorePath) {
+        _stack.info = _stack.info.replace(/http(s)?\:[^:\n]*\//ig, "").replace(/\n/gi, "");
+      }
+      return _stack;
+    }
+    //兜底方法
+    window.addEventListener && window.addEventListener('error', _.BadJs.winErr);
+    window.addEventListener && window.addEventListener('unhandledrejection', _.BadJs.winErr);
+    return _.BadJs;
+  })(WX_BJ_REPORT);
+  window.WX_BJ_REPORT = WX_BJ_REPORT;
+  /**
+   * 兼容wap项目的简单CMD管理
+   * 所有wap项目必须包含此文件才可以执行成功
+   * 暴露在全局的变量仍然以seajs为命名空间，跟web项目保持一致
+   * 支持的API是seajs.use，以及require define
+   * @author raphealguo
+   * @date 20140326
+   */
+  function __moonf__() {
+    if (window.__moonhasinit) return;
+    window.__moonhasinit = true;
+    window.__moonclientlog = []; // moon中存到客户端日志里面的内容，最终写入到客户端的地点在fereport.js
+    if (typeof JSON != "object") { //针对IE7的hack
+      window.JSON = {
+        stringify: function() { return ""; },
+        parse: function() { return {}; }
+      };
+    }
+    var moon_init = function() {
+      /**
+       * mooncatch
+       * 对各种异步回调都使用try catch错误上报
+       * @radeonwu raphealguo
+       */
+      (function() {
+        var inWx = (/MicroMessenger/i).test(navigator.userAgent);
+        var inMp = (/MPAPP/i).test(navigator.userAgent);
+        var _idkey = 121261; //上报的idkey 添加默认上报值
+        var _startKey; //开始的key
+        var _limit; //上报的key的长度
+        var _badjsId;
+        var _reportOpt; //上报的额外信息
+        var _extInfo; //附加的预留字段，如网络采样率采样率network_rate， 总体上报率rate
+        var MOON_AJAX_NETWORK_OFFSET = 4; //network错误时的上报偏移量为4，这里在ajax.js中上报，这里需要加入采样率
+        window.__initCatch = function(opt) {
+          _idkey = opt.idkey;
+          _startKey = opt.startKey || 0;
+          _limit = opt.limit;
+          _badjsId = opt.badjsId;
+          _reportOpt = opt.reportOpt || "";
+          _extInfo = opt.extInfo || {};
+          _extInfo.rate = _extInfo.rate || 0.5;
+        }
+        //暴露的上报函数，供core.js和ajax.js上报错误使用，array = [{offset:MOON_JSAPI_KEY_OFFSET, log:"ready", e:e}]
+        window.__moon_report = function(array, rate_opt) {
+          var isAcrossOrigin = false;
+          var href = '';
+          try {
+            href = top.location.href;
+          } catch (e) {
+            isAcrossOrigin = true;
+          }
+          var rate = 0.5;
+          if (!!_extInfo && !!_extInfo.rate) {
+            rate = _extInfo.rate;
+          }
+          if (!!rate_opt && (typeof rate_opt == 'number')) {
+            rate = rate_opt;
+          }
+          if (
+            (!(/mp\.weixin\.qq\.com/).test(location.href) && !(/payapp\.weixin\.qq\.com/).test(location.href)) ||
+            Math.random() > rate ||
+            !(inWx || inMp) ||
+            (top != window && !isAcrossOrigin && !(/mp\.weixin\.qq\.com/).test(href))
+          ) {
+            //return ;
+          }
+          if (isObject(array))
+            array = [array];
+          if (!isArray(array) || _idkey == '')
+            return;
+          var data = "";
+          var log = []; //存放array中每个对象关联的log
+          var key = []; //存放array中每个上报的key
+          var val = []; //存放array中每个上报的value
+          var idkey = [];
+          //如果这里没有opt.limit，直接上报到startKey
+          if (typeof _limit != "number") {
+            _limit = Infinity;
+          }
+          for (var i = 0; i < array.length; i++) {
+            var item = array[i] || {};
+            if (item.offset > _limit) continue; //上报的偏移量超过limit
+            if (typeof item.offset != "number") continue;
+            if (item.offset == MOON_AJAX_NETWORK_OFFSET && !!_extInfo && !!_extInfo.network_rate && Math.random() >= _extInfo.network_rate) {
+              continue;
+            }
+            //log[i] = item.log || "";
+            var k = _limit == Infinity ? _startKey : (_startKey + item.offset);
+            log[i] = (("[moon]" + _idkey + "_" + k + ";") + item.log + ";" + getErrorMessage(item.e || {})) || "";
+            key[i] = k;
+            val[i] = 1;
+          }
+          for (var j = 0; j < key.length; j++) {
+            idkey[j] = _idkey + "_" + key[j] + "_" + val[j];
+            data = data + "&log" + j + "=" + log[j];
+          }
+          if (idkey.length > 0) {
+            // sendReport("idkey=" + idkey.join(";") + "&lc=" + log.length + data);
+            sendReport("POST", location.protocol + '//mp.weixin.qq.com/mp/jsmonitor?', "idkey=" + idkey.join(";") + "&r=" + Math.random() + "&lc=" + log.length + data);
+            // 把图文消息的错误上报一份到badjs，只支持get请求
+            // 这里由于量比较大，把badjs的内层怼爆了，这里加多一个采样，并且去掉用户的信息
+            var rate = 1;
+            if (_extInfo && _extInfo.badjs_rate) { // 初始化时的badjs采样率
+              rate = _extInfo.badjs_rate;
+            }
+            if (Math.random() < rate) {
+              data = data.replace(/uin\:(.)*\|biz\:(.)*\|mid\:(.)*\|idx\:(.)*\|sn\:(.)*\|/, '');
+              if(!!_badjsId){
+                var _img = new Image();
+                var _src = 'https://badjs.weixinbridge.com/badjs?id=' + _badjsId + '&level=4&from=' + encodeURIComponent(location.host) + '&msg=' + encodeURIComponent(data);
+                _img.src = _src.slice(0, 1024);
+              }
+              // badjs同时报一份到新监控 
+              if (typeof WX_BJ_REPORT != "undefined" && WX_BJ_REPORT.BadJs) {
+                for (var i = 0; i < array.length; i++) {
+                  var item = array[i] || {};
+                  if (item.e) {
+                    WX_BJ_REPORT.BadJs.onError(item.e,{_info:item.log});
+                  } else {
+                    var name = /[^:;]*/.exec(item.log)[0];
+                    WX_BJ_REPORT.BadJs.report(name, item.log, { mid: "mmbizwap:Monitor" });
+                  }
+                }
+              }
+            } else {
+              //虽然采样没有执行 但实际是有被BadJs.onError，置位一下
+              for (var i = 0; i < array.length; i++) {
+                var item = array[i] || {};
+                if (item.e) {
+                  item.e.BADJS_EXCUTED = true;
+                }
+              }
+            }
+          }
+        }
+        function isArray(obj) { //判断输入是否为数组
+          return Object.prototype.toString.call(obj) === '[object Array]';
+        }
+        function isObject(obj) { //判断输入是否为对象
+          return Object.prototype.toString.call(obj) === '[object Object]';
+        }
+        function getErrorMessage(e) {
+          var stack = e.stack + ' ' + e.toString() || ""; //错误堆栈信息
+          try {
+            //先取出res域名
+            if (!window.testenv_reshost) {
+              stack = stack.replace(/http(s)?:\/\/res\.wx\.qq\.com/g, "");
+            } else {
+              var host = 'http(s)?://' + window.testenv_reshost;
+              var reg = new RegExp(host, 'g');
+              stack = stack.replace(reg, "");
+            }
+            //提取最后一个.js前边的
+            var reg = /\/([^.]+)\/js\/(\S+?)\.js(\,|:)?/g;
+            while (reg.test(stack)) {
+              // stack = stack.replace(reg, "3"); 解决$问题
+              stack = stack.replace(reg, function(a, b, c, d, e, f) {
+                return c + d
+              });
+            }
+          } catch (e) {
+            stack = e.stack ? e.stack : "" //错误堆栈信息
+          }
+          var ret = [];
+          for (o in _reportOpt) {
+            if (_reportOpt.hasOwnProperty(o)) {
+              ret.push(o + ":" + _reportOpt[o]);
+            }
+          }
+          ret.push("STK:" + stack.replace(/\n/g, ""));
+          return ret.join("|");
+        }
+        function sendReport(type, url, data) { //post方法用于提交数据
+          if (!/^mp\.weixin\.qq\.com$/.test(location.hostname)) { //非MP域名使用 img方式上报
+            var tmp = [];
+            data = data.replace(location.href, (location.origin || "") + (location.pathname || "")).replace("#wechat_redirect", "").replace("#rd", "").split("&");
+            for (var i = 0, il = data.length; i < il; i++) {
+              var a = data[i].split("=");
+              if (!!a[0] && !!a[1]) {
+                tmp.push(a[0] + "=" + encodeURIComponent(a[1]));
+              }
+            }
+            var _img = new window.Image();
+            _img.src = (url + tmp.join("&")).substr(0, 1024);
+            return;
+          }
+          var xmlobj; //定义XMLHttpRequest对象  
+          if (window.ActiveXObject) { //如果当前浏览器支持Active Xobject，则创建ActiveXObject对象    
+            try {
+              xmlobj = new ActiveXObject("Msxml2.XMLHTTP");
+            } catch (e) {
+              try {
+                xmlobj = new ActiveXObject("Microsoft.XMLHTTP");
+              } catch (E) {
+                xmlobj = false;
+              }
+            }
+          } else if (window.XMLHttpRequest) { //如果当前浏览器支持XMLHttpRequest，则创建XMLHttpRequest对象  
+            xmlobj = new XMLHttpRequest();
+          }
+          if (!xmlobj) return;
+          //xmlobj.open("POST", location.protocol + "//mp.weixin.qq.com/mp/jsmonitor?", true);         
+          xmlobj.open(type, url, true);
+          xmlobj.setRequestHeader("cache-control", "no-cache");
+          xmlobj.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8"); //设置请求头信息              
+          xmlobj.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+          xmlobj.send(data); //发送数据  
+        }
+
+      })();
+      // 后面的@cunjinli
+    };
+    moon_init();
+    //由于moon异步化，所以有些逻辑需要moon加载完之后才执行的 放到全局callback函数__moon_initcallback里边
+    (!!window.__moon_initcallback) && (window.__moon_initcallback());
+  }
+  // 为适应inline逻辑，有map时才主动自执行 @zhikaimai
+  // if (typeof window.moon_map == 'object') {
+  //     __moonf__();
+  // }
+  __moonf__();
+  
+  if (!!window.addEventListener){
+    window.addEventListener("load",function(){
+      var MOON_SCRIPT_ERROR_KEY_OFFSET = 1; //script上报时的偏移量为1
+      var ns = document.querySelectorAll("[reportloaderror]");
+      for(var ni=0,nl=ns.length;ni<nl;ni++)
+        ns[ni].onerror=function(ev){
+          window.__moon_report([{ offset: MOON_SCRIPT_ERROR_KEY_OFFSET, log: "load_script_error:" + ev.target.src, e: new Error('LoadResError') }], 1);
+          window.WX_BJ_REPORT.BadJs.report("load_script_error", ev.target.src, { mid: "mmbizwap:Monitor" });
+        };
+    });
+  }
+  </script>
+   
+    
+
+  
+  <meta name="description" content="" />
+  <meta name="author" content="小花晒太阳" />
+
+  
+  
+  
+  
+  
+  
+  
+  
+
+  
+  
+  
+  
+  
+  
+  
+
+
+    <title>细节藏魔鬼容量瓶不相容引入杂质</title>
+    <script type="text/javascript" nonce="1176578612" reportloaderror>!function(){"use strict";var t=window.WebKitMutationObserver||window.MutationObserver||window.MozMutationObserver,e=0===location.href.indexOf("http://"),r=function(t){if(t){var e=t.match(/http(?:s)?:\/\/([^\/]+?)(\/|$)/);if(e&&!/qq\.com(\:8080)?$/.test(e[1])&&!/weishi\.com$/.test(e[1]))return!0}return!1};-1===location.href.indexOf("safe=0")&&e&&"function"==typeof t&&"mp.weixin.qq.com"===location.host&&(window.__observer_data={count:0,exec_time:0,list:[]},window.__observer=new t((function(t){window.__observer_data.count++;var e=new Date,o=[];t.forEach((function(t){for(var e=t.addedNodes,n=0;n<e.length;n++){var i=e[n];if("SCRIPT"===i.tagName){var _=i.src;r(_)&&(window.__observer_data.list.push(_),o.push(i)),!_&&window.__nonce_str&&i.getAttribute("nonce")!=window.__nonce_str&&(window.__observer_data.list.push("inlinescript_without_nonce"),o.push(i))}}}));for(var n=0;n<o.length;n++){var i=o[n];i.parentNode&&i.parentNode.removeChild(i)}window.__observer_data.exec_time+=new Date-e})),window.__observer.observe(document,{subtree:!0,childList:!0})),function(){if(-1===location.href.indexOf("safe=0")&&Math.random()<.01&&e&&HTMLScriptElement.prototype.__lookupSetter__&&void 0!==Object.defineProperty){window.__danger_src={xmlhttprequest:[],script_src:[],script_setAttribute:[]};var t="$"+Math.random(),o="Setter__";HTMLScriptElement.prototype.__old_method_script_src=HTMLScriptElement.prototype["__lookup"+o]("src"),HTMLScriptElement.prototype["__define"+o]("src",(function(t){t&&r(t)&&window.__danger_src.script_src.push(t),this.__old_method_script_src(t)}));var n="__setAttribute"+t;Object.defineProperty(Element.prototype,n,{value:Element.prototype.setAttribute,enumerable:!1}),Element.prototype.setAttribute=function(t,e){"SCRIPT"===this.tagName&&"src"===t&&r(e)&&window.__danger_src.script_setAttribute.push(e),this[n](t,e)}}}()}();</script><script type="text/javascript" secondopen="false" nonce="1176578612" reportloaderror>!function(e,t){"object"==typeof exports&&"object"==typeof module?module.exports=t():"function"==typeof define&&define.amd?define("Darkmode",[],t):"object"==typeof exports?exports.Darkmode=t():e.Darkmode=t()}(window,(function(){return function(e){var t={};function r(n){if(t[n])return t[n].exports;var a=t[n]={i:n,l:!1,exports:{}};return e[n].call(a.exports,a,a.exports,r),a.l=!0,a.exports}return r.m=e,r.c=t,r.d=function(e,t,n){r.o(e,t)||Object.defineProperty(e,t,{enumerable:!0,get:n})},r.r=function(e){"undefined"!=typeof Symbol&&Symbol.toStringTag&&Object.defineProperty(e,Symbol.toStringTag,{value:"Module"}),Object.defineProperty(e,"__esModule",{value:!0})},r.t=function(e,t){if(1&t&&(e=r(e)),8&t)return e;if(4&t&&"object"==typeof e&&e&&e.__esModule)return e;var n=Object.create(null);if(r.r(n),Object.defineProperty(n,"default",{enumerable:!0,value:e}),2&t&&"string"!=typeof e)for(var a in e)r.d(n,a,function(t){return e[t]}.bind(null,a));return n},r.n=function(e){var t=e&&e.__esModule?function(){return e.default}:function(){return e};return r.d(t,"a",t),t},r.o=function(e,t){return Object.prototype.hasOwnProperty.call(e,t)},r.p="",r(r.s=9)}([function(e,t,r){"use strict";var n=r(3),a=r(6),o=[].slice,i=["keyword","gray","hex"],l={};Object.keys(a).forEach((function(e){l[o.call(a[e].labels).sort().join("")]=e}));var s={};function u(e,t){if(!(this instanceof u))return new u(e,t);if(t&&t in i&&(t=null),t&&!(t in a))throw new Error("Unknown model: "+t);var r,c;if(null==e)this.model="rgb",this.color=[0,0,0],this.valpha=1;else if(e instanceof u)this.model=e.model,this.color=e.color.slice(),this.valpha=e.valpha;else if("string"==typeof e){var h=n.get(e);if(null===h)throw new Error("Unable to parse color from string: "+e);this.model=h.model,c=a[this.model].channels,this.color=h.value.slice(0,c),this.valpha="number"==typeof h.value[c]?h.value[c]:1}else if(e.length){this.model=t||"rgb",c=a[this.model].channels;var f=o.call(e,0,c);this.color=d(f,c),this.valpha="number"==typeof e[c]?e[c]:1}else if("number"==typeof e)e&=16777215,this.model="rgb",this.color=[e>>16&255,e>>8&255,255&e],this.valpha=1;else{this.valpha=1;var g=Object.keys(e);"alpha"in e&&(g.splice(g.indexOf("alpha"),1),this.valpha="number"==typeof e.alpha?e.alpha:0);var b=g.sort().join("");if(!(b in l))throw new Error("Unable to parse color from object: "+JSON.stringify(e));this.model=l[b];var p=a[this.model].labels,y=[];for(r=0;r<p.length;r++)y.push(e[p[r]]);this.color=d(y)}if(s[this.model])for(c=a[this.model].channels,r=0;r<c;r++){var m=s[this.model][r];m&&(this.color[r]=m(this.color[r]))}this.valpha=Math.max(0,Math.min(1,this.valpha)),Object.freeze&&Object.freeze(this)}function c(e,t,r){return(e=Array.isArray(e)?e:[e]).forEach((function(e){(s[e]||(s[e]=[]))[t]=r})),e=e[0],function(n){var a;return arguments.length?(r&&(n=r(n)),(a=this[e]()).color[t]=n,a):(a=this[e]().color[t],r&&(a=r(a)),a)}}function h(e){return function(t){return Math.max(0,Math.min(e,t))}}function f(e){return Array.isArray(e)?e:[e]}function d(e,t){for(var r=0;r<t;r++)"number"!=typeof e[r]&&(e[r]=0);return e}u.prototype={toString:function(){return this.string()},toJSON:function(){return this[this.model]()},string:function(e){var t=this.model in n.to?this:this.rgb(),r=1===(t=t.round("number"==typeof e?e:1)).valpha?t.color:t.color.concat(this.valpha);return n.to[t.model](r)},percentString:function(e){var t=this.rgb().round("number"==typeof e?e:1),r=1===t.valpha?t.color:t.color.concat(this.valpha);return n.to.rgb.percent(r)},array:function(){return 1===this.valpha?this.color.slice():this.color.concat(this.valpha)},object:function(){for(var e={},t=a[this.model].channels,r=a[this.model].labels,n=0;n<t;n++)e[r[n]]=this.color[n];return 1!==this.valpha&&(e.alpha=this.valpha),e},unitArray:function(){var e=this.rgb().color;return e[0]/=255,e[1]/=255,e[2]/=255,1!==this.valpha&&e.push(this.valpha),e},unitObject:function(){var e=this.rgb().object();return e.r/=255,e.g/=255,e.b/=255,1!==this.valpha&&(e.alpha=this.valpha),e},round:function(e){return e=Math.max(e||0,0),new u(this.color.map(function(e){return function(t){return function(e,t){return Number(e.toFixed(t))}(t,e)}}(e)).concat(this.valpha),this.model)},alpha:function(e){return arguments.length?new u(this.color.concat(Math.max(0,Math.min(1,e))),this.model):this.valpha},red:c("rgb",0,h(255)),green:c("rgb",1,h(255)),blue:c("rgb",2,h(255)),hue:c(["hsl","hsv","hsl","hwb","hcg"],0,(function(e){return(e%360+360)%360})),saturationl:c("hsl",1,h(100)),lightness:c("hsl",2,h(100)),saturationv:c("hsv",1,h(100)),value:c("hsv",2,h(100)),chroma:c("hcg",1,h(100)),gray:c("hcg",2,h(100)),white:c("hwb",1,h(100)),wblack:c("hwb",2,h(100)),cyan:c("cmyk",0,h(100)),magenta:c("cmyk",1,h(100)),yellow:c("cmyk",2,h(100)),black:c("cmyk",3,h(100)),x:c("xyz",0,h(100)),y:c("xyz",1,h(100)),z:c("xyz",2,h(100)),l:c("lab",0,h(100)),a:c("lab",1),b:c("lab",2),keyword:function(e){return arguments.length?new u(e):a[this.model].keyword(this.color)},hex:function(e){return arguments.length?new u(e):n.to.hex(this.rgb().round().color)},rgbNumber:function(){var e=this.rgb().color;return(255&e[0])<<16|(255&e[1])<<8|255&e[2]},luminosity:function(){for(var e=this.rgb().color,t=[],r=0;r<e.length;r++){var n=e[r]/255;t[r]=n<=.03928?n/12.92:Math.pow((n+.055)/1.055,2.4)}return.2126*t[0]+.7152*t[1]+.0722*t[2]},contrast:function(e){var t=this.luminosity(),r=e.luminosity();return t>r?(t+.05)/(r+.05):(r+.05)/(t+.05)},level:function(e){var t=this.contrast(e);return t>=7.1?"AAA":t>=4.5?"AA":""},isDark:function(){var e=this.rgb().color;return(299*e[0]+587*e[1]+114*e[2])/1e3<128},isLight:function(){return!this.isDark()},negate:function(){for(var e=this.rgb(),t=0;t<3;t++)e.color[t]=255-e.color[t];return e},lighten:function(e){var t=this.hsl();return t.color[2]+=t.color[2]*e,t},darken:function(e){var t=this.hsl();return t.color[2]-=t.color[2]*e,t},saturate:function(e){var t=this.hsl();return t.color[1]+=t.color[1]*e,t},desaturate:function(e){var t=this.hsl();return t.color[1]-=t.color[1]*e,t},whiten:function(e){var t=this.hwb();return t.color[1]+=t.color[1]*e,t},blacken:function(e){var t=this.hwb();return t.color[2]+=t.color[2]*e,t},grayscale:function(){var e=this.rgb().color,t=.3*e[0]+.59*e[1]+.11*e[2];return u.rgb(t,t,t)},fade:function(e){return this.alpha(this.valpha-this.valpha*e)},opaquer:function(e){return this.alpha(this.valpha+this.valpha*e)},rotate:function(e){var t=this.hsl(),r=t.color[0];return r=(r=(r+e)%360)<0?360+r:r,t.color[0]=r,t},mix:function(e,t){if(!e||!e.rgb)throw new Error('Argument to "mix" was not a Color instance, but rather an instance of '+typeof e);var r=e.rgb(),n=this.rgb(),a=void 0===t?.5:t,o=2*a-1,i=r.alpha()-n.alpha(),l=((o*i==-1?o:(o+i)/(1+o*i))+1)/2,s=1-l;return u.rgb(l*r.red()+s*n.red(),l*r.green()+s*n.green(),l*r.blue()+s*n.blue(),r.alpha()*a+n.alpha()*(1-a))}},Object.keys(a).forEach((function(e){if(-1===i.indexOf(e)){var t=a[e].channels;u.prototype[e]=function(){if(this.model===e)return new u(this);if(arguments.length)return new u(arguments,e);var r="number"==typeof arguments[t]?t:this.valpha;return new u(f(a[this.model][e].raw(this.color)).concat(r),e)},u[e]=function(r){return"number"==typeof r&&(r=d(o.call(arguments),t)),new u(r,e)}}})),e.exports=u},function(e,t,r){"use strict";e.exports={aliceblue:[240,248,255],antiquewhite:[250,235,215],aqua:[0,255,255],aquamarine:[127,255,212],azure:[240,255,255],beige:[245,245,220],bisque:[255,228,196],black:[0,0,0],blanchedalmond:[255,235,205],blue:[0,0,255],blueviolet:[138,43,226],brown:[165,42,42],burlywood:[222,184,135],cadetblue:[95,158,160],chartreuse:[127,255,0],chocolate:[210,105,30],coral:[255,127,80],cornflowerblue:[100,149,237],cornsilk:[255,248,220],crimson:[220,20,60],cyan:[0,255,255],darkblue:[0,0,139],darkcyan:[0,139,139],darkgoldenrod:[184,134,11],darkgray:[169,169,169],darkgreen:[0,100,0],darkgrey:[169,169,169],darkkhaki:[189,183,107],darkmagenta:[139,0,139],darkolivegreen:[85,107,47],darkorange:[255,140,0],darkorchid:[153,50,204],darkred:[139,0,0],darksalmon:[233,150,122],darkseagreen:[143,188,143],darkslateblue:[72,61,139],darkslategray:[47,79,79],darkslategrey:[47,79,79],darkturquoise:[0,206,209],darkviolet:[148,0,211],deeppink:[255,20,147],deepskyblue:[0,191,255],dimgray:[105,105,105],dimgrey:[105,105,105],dodgerblue:[30,144,255],firebrick:[178,34,34],floralwhite:[255,250,240],forestgreen:[34,139,34],fuchsia:[255,0,255],gainsboro:[220,220,220],ghostwhite:[248,248,255],gold:[255,215,0],goldenrod:[218,165,32],gray:[128,128,128],green:[0,128,0],greenyellow:[173,255,47],grey:[128,128,128],honeydew:[240,255,240],hotpink:[255,105,180],indianred:[205,92,92],indigo:[75,0,130],ivory:[255,255,240],khaki:[240,230,140],lavender:[230,230,250],lavenderblush:[255,240,245],lawngreen:[124,252,0],lemonchiffon:[255,250,205],lightblue:[173,216,230],lightcoral:[240,128,128],lightcyan:[224,255,255],lightgoldenrodyellow:[250,250,210],lightgray:[211,211,211],lightgreen:[144,238,144],lightgrey:[211,211,211],lightpink:[255,182,193],lightsalmon:[255,160,122],lightseagreen:[32,178,170],lightskyblue:[135,206,250],lightslategray:[119,136,153],lightslategrey:[119,136,153],lightsteelblue:[176,196,222],lightyellow:[255,255,224],lime:[0,255,0],limegreen:[50,205,50],linen:[250,240,230],magenta:[255,0,255],maroon:[128,0,0],mediumaquamarine:[102,205,170],mediumblue:[0,0,205],mediumorchid:[186,85,211],mediumpurple:[147,112,219],mediumseagreen:[60,179,113],mediumslateblue:[123,104,238],mediumspringgreen:[0,250,154],mediumturquoise:[72,209,204],mediumvioletred:[199,21,133],midnightblue:[25,25,112],mintcream:[245,255,250],mistyrose:[255,228,225],moccasin:[255,228,181],navajowhite:[255,222,173],navy:[0,0,128],oldlace:[253,245,230],olive:[128,128,0],olivedrab:[107,142,35],orange:[255,165,0],orangered:[255,69,0],orchid:[218,112,214],palegoldenrod:[238,232,170],palegreen:[152,251,152],paleturquoise:[175,238,238],palevioletred:[219,112,147],papayawhip:[255,239,213],peachpuff:[255,218,185],peru:[205,133,63],pink:[255,192,203],plum:[221,160,221],powderblue:[176,224,230],purple:[128,0,128],rebeccapurple:[102,51,153],red:[255,0,0],rosybrown:[188,143,143],royalblue:[65,105,225],saddlebrown:[139,69,19],salmon:[250,128,114],sandybrown:[244,164,96],seagreen:[46,139,87],seashell:[255,245,238],sienna:[160,82,45],silver:[192,192,192],skyblue:[135,206,235],slateblue:[106,90,205],slategray:[112,128,144],slategrey:[112,128,144],snow:[255,250,250],springgreen:[0,255,127],steelblue:[70,130,180],tan:[210,180,140],teal:[0,128,128],thistle:[216,191,216],tomato:[255,99,71],turquoise:[64,224,208],violet:[238,130,238],wheat:[245,222,179],white:[255,255,255],whitesmoke:[245,245,245],yellow:[255,255,0],yellowgreen:[154,205,50]}},function(e,t,r){var n=r(7),a={};for(var o in n)n.hasOwnProperty(o)&&(a[n[o]]=o);var i=e.exports={rgb:{channels:3,labels:"rgb"},hsl:{channels:3,labels:"hsl"},hsv:{channels:3,labels:"hsv"},hwb:{channels:3,labels:"hwb"},cmyk:{channels:4,labels:"cmyk"},xyz:{channels:3,labels:"xyz"},lab:{channels:3,labels:"lab"},lch:{channels:3,labels:"lch"},hex:{channels:1,labels:["hex"]},keyword:{channels:1,labels:["keyword"]},ansi16:{channels:1,labels:["ansi16"]},ansi256:{channels:1,labels:["ansi256"]},hcg:{channels:3,labels:["h","c","g"]},apple:{channels:3,labels:["r16","g16","b16"]},gray:{channels:1,labels:["gray"]}};for(var l in i)if(i.hasOwnProperty(l)){if(!("channels"in i[l]))throw new Error("missing channels property: "+l);if(!("labels"in i[l]))throw new Error("missing channel labels property: "+l);if(i[l].labels.length!==i[l].channels)throw new Error("channel and label counts mismatch: "+l);var s=i[l].channels,u=i[l].labels;delete i[l].channels,delete i[l].labels,Object.defineProperty(i[l],"channels",{value:s}),Object.defineProperty(i[l],"labels",{value:u})}i.rgb.hsl=function(e){var t,r,n=e[0]/255,a=e[1]/255,o=e[2]/255,i=Math.min(n,a,o),l=Math.max(n,a,o),s=l-i;return l===i?t=0:n===l?t=(a-o)/s:a===l?t=2+(o-n)/s:o===l&&(t=4+(n-a)/s),(t=Math.min(60*t,360))<0&&(t+=360),r=(i+l)/2,[t,100*(l===i?0:r<=.5?s/(l+i):s/(2-l-i)),100*r]},i.rgb.hsv=function(e){var t,r,n,a,o,i=e[0]/255,l=e[1]/255,s=e[2]/255,u=Math.max(i,l,s),c=u-Math.min(i,l,s),h=function(e){return(u-e)/6/c+.5};return 0===c?a=o=0:(o=c/u,t=h(i),r=h(l),n=h(s),i===u?a=n-r:l===u?a=1/3+t-n:s===u&&(a=2/3+r-t),a<0?a+=1:a>1&&(a-=1)),[360*a,100*o,100*u]},i.rgb.hwb=function(e){var t=e[0],r=e[1],n=e[2];return[i.rgb.hsl(e)[0],100*(1/255*Math.min(t,Math.min(r,n))),100*(n=1-1/255*Math.max(t,Math.max(r,n)))]},i.rgb.cmyk=function(e){var t,r=e[0]/255,n=e[1]/255,a=e[2]/255;return[100*((1-r-(t=Math.min(1-r,1-n,1-a)))/(1-t)||0),100*((1-n-t)/(1-t)||0),100*((1-a-t)/(1-t)||0),100*t]},i.rgb.keyword=function(e){var t=a[e];if(t)return t;var r,o,i,l=1/0;for(var s in n)if(n.hasOwnProperty(s)){var u=n[s],c=(o=e,i=u,Math.pow(o[0]-i[0],2)+Math.pow(o[1]-i[1],2)+Math.pow(o[2]-i[2],2));c<l&&(l=c,r=s)}return r},i.keyword.rgb=function(e){return n[e]},i.rgb.xyz=function(e){var t=e[0]/255,r=e[1]/255,n=e[2]/255;return[100*(.4124*(t=t>.04045?Math.pow((t+.055)/1.055,2.4):t/12.92)+.3576*(r=r>.04045?Math.pow((r+.055)/1.055,2.4):r/12.92)+.1805*(n=n>.04045?Math.pow((n+.055)/1.055,2.4):n/12.92)),100*(.2126*t+.7152*r+.0722*n),100*(.0193*t+.1192*r+.9505*n)]},i.rgb.lab=function(e){var t=i.rgb.xyz(e),r=t[0],n=t[1],a=t[2];return n/=100,a/=108.883,r=(r/=95.047)>.008856?Math.pow(r,1/3):7.787*r+16/116,[116*(n=n>.008856?Math.pow(n,1/3):7.787*n+16/116)-16,500*(r-n),200*(n-(a=a>.008856?Math.pow(a,1/3):7.787*a+16/116))]},i.hsl.rgb=function(e){var t,r,n,a,o,i=e[0]/360,l=e[1]/100,s=e[2]/100;if(0===l)return[o=255*s,o,o];t=2*s-(r=s<.5?s*(1+l):s+l-s*l),a=[0,0,0];for(var u=0;u<3;u++)(n=i+1/3*-(u-1))<0&&n++,n>1&&n--,o=6*n<1?t+6*(r-t)*n:2*n<1?r:3*n<2?t+(r-t)*(2/3-n)*6:t,a[u]=255*o;return a},i.hsl.hsv=function(e){var t=e[0],r=e[1]/100,n=e[2]/100,a=r,o=Math.max(n,.01);return r*=(n*=2)<=1?n:2-n,a*=o<=1?o:2-o,[t,100*(0===n?2*a/(o+a):2*r/(n+r)),100*((n+r)/2)]},i.hsv.rgb=function(e){var t=e[0]/60,r=e[1]/100,n=e[2]/100,a=Math.floor(t)%6,o=t-Math.floor(t),i=255*n*(1-r),l=255*n*(1-r*o),s=255*n*(1-r*(1-o));switch(n*=255,a){case 0:return[n,s,i];case 1:return[l,n,i];case 2:return[i,n,s];case 3:return[i,l,n];case 4:return[s,i,n];case 5:return[n,i,l]}},i.hsv.hsl=function(e){var t,r,n,a=e[0],o=e[1]/100,i=e[2]/100,l=Math.max(i,.01);return n=(2-o)*i,r=o*l,[a,100*(r=(r/=(t=(2-o)*l)<=1?t:2-t)||0),100*(n/=2)]},i.hwb.rgb=function(e){var t,r,n,a,o,i,l,s=e[0]/360,u=e[1]/100,c=e[2]/100,h=u+c;switch(h>1&&(u/=h,c/=h),n=6*s-(t=Math.floor(6*s)),0!=(1&t)&&(n=1-n),a=u+n*((r=1-c)-u),t){default:case 6:case 0:o=r,i=a,l=u;break;case 1:o=a,i=r,l=u;break;case 2:o=u,i=r,l=a;break;case 3:o=u,i=a,l=r;break;case 4:o=a,i=u,l=r;break;case 5:o=r,i=u,l=a}return[255*o,255*i,255*l]},i.cmyk.rgb=function(e){var t=e[0]/100,r=e[1]/100,n=e[2]/100,a=e[3]/100;return[255*(1-Math.min(1,t*(1-a)+a)),255*(1-Math.min(1,r*(1-a)+a)),255*(1-Math.min(1,n*(1-a)+a))]},i.xyz.rgb=function(e){var t,r,n,a=e[0]/100,o=e[1]/100,i=e[2]/100;return r=-.9689*a+1.8758*o+.0415*i,n=.0557*a+-.204*o+1.057*i,t=(t=3.2406*a+-1.5372*o+-.4986*i)>.0031308?1.055*Math.pow(t,1/2.4)-.055:12.92*t,r=r>.0031308?1.055*Math.pow(r,1/2.4)-.055:12.92*r,n=n>.0031308?1.055*Math.pow(n,1/2.4)-.055:12.92*n,[255*(t=Math.min(Math.max(0,t),1)),255*(r=Math.min(Math.max(0,r),1)),255*(n=Math.min(Math.max(0,n),1))]},i.xyz.lab=function(e){var t=e[0],r=e[1],n=e[2];return r/=100,n/=108.883,t=(t/=95.047)>.008856?Math.pow(t,1/3):7.787*t+16/116,[116*(r=r>.008856?Math.pow(r,1/3):7.787*r+16/116)-16,500*(t-r),200*(r-(n=n>.008856?Math.pow(n,1/3):7.787*n+16/116))]},i.lab.xyz=function(e){var t,r,n,a=e[0];t=e[1]/500+(r=(a+16)/116),n=r-e[2]/200;var o=Math.pow(r,3),i=Math.pow(t,3),l=Math.pow(n,3);return r=o>.008856?o:(r-16/116)/7.787,t=i>.008856?i:(t-16/116)/7.787,n=l>.008856?l:(n-16/116)/7.787,[t*=95.047,r*=100,n*=108.883]},i.lab.lch=function(e){var t,r=e[0],n=e[1],a=e[2];return(t=360*Math.atan2(a,n)/2/Math.PI)<0&&(t+=360),[r,Math.sqrt(n*n+a*a),t]},i.lch.lab=function(e){var t,r=e[0],n=e[1];return t=e[2]/360*2*Math.PI,[r,n*Math.cos(t),n*Math.sin(t)]},i.rgb.ansi16=function(e){var t=e[0],r=e[1],n=e[2],a=1 in arguments?arguments[1]:i.rgb.hsv(e)[2];if(0===(a=Math.round(a/50)))return 30;var o=30+(Math.round(n/255)<<2|Math.round(r/255)<<1|Math.round(t/255));return 2===a&&(o+=60),o},i.hsv.ansi16=function(e){return i.rgb.ansi16(i.hsv.rgb(e),e[2])},i.rgb.ansi256=function(e){var t=e[0],r=e[1],n=e[2];return t===r&&r===n?t<8?16:t>248?231:Math.round((t-8)/247*24)+232:16+36*Math.round(t/255*5)+6*Math.round(r/255*5)+Math.round(n/255*5)},i.ansi16.rgb=function(e){var t=e%10;if(0===t||7===t)return e>50&&(t+=3.5),[t=t/10.5*255,t,t];var r=.5*(1+~~(e>50));return[(1&t)*r*255,(t>>1&1)*r*255,(t>>2&1)*r*255]},i.ansi256.rgb=function(e){if(e>=232){var t=10*(e-232)+8;return[t,t,t]}var r;return e-=16,[Math.floor(e/36)/5*255,Math.floor((r=e%36)/6)/5*255,r%6/5*255]},i.rgb.hex=function(e){var t=(((255&Math.round(e[0]))<<16)+((255&Math.round(e[1]))<<8)+(255&Math.round(e[2]))).toString(16).toUpperCase();return"000000".substring(t.length)+t},i.hex.rgb=function(e){var t=e.toString(16).match(/[a-f0-9]{6}|[a-f0-9]{3}/i);if(!t)return[0,0,0];var r=t[0];3===t[0].length&&(r=r.split("").map((function(e){return e+e})).join(""));var n=parseInt(r,16);return[n>>16&255,n>>8&255,255&n]},i.rgb.hcg=function(e){var t,r=e[0]/255,n=e[1]/255,a=e[2]/255,o=Math.max(Math.max(r,n),a),i=Math.min(Math.min(r,n),a),l=o-i;return t=l<=0?0:o===r?(n-a)/l%6:o===n?2+(a-r)/l:4+(r-n)/l+4,t/=6,[360*(t%=1),100*l,100*(l<1?i/(1-l):0)]},i.hsl.hcg=function(e){var t=e[1]/100,r=e[2]/100,n=1,a=0;return(n=r<.5?2*t*r:2*t*(1-r))<1&&(a=(r-.5*n)/(1-n)),[e[0],100*n,100*a]},i.hsv.hcg=function(e){var t=e[1]/100,r=e[2]/100,n=t*r,a=0;return n<1&&(a=(r-n)/(1-n)),[e[0],100*n,100*a]},i.hcg.rgb=function(e){var t=e[0]/360,r=e[1]/100,n=e[2]/100;if(0===r)return[255*n,255*n,255*n];var a,o=[0,0,0],i=t%1*6,l=i%1,s=1-l;switch(Math.floor(i)){case 0:o[0]=1,o[1]=l,o[2]=0;break;case 1:o[0]=s,o[1]=1,o[2]=0;break;case 2:o[0]=0,o[1]=1,o[2]=l;break;case 3:o[0]=0,o[1]=s,o[2]=1;break;case 4:o[0]=l,o[1]=0,o[2]=1;break;default:o[0]=1,o[1]=0,o[2]=s}return a=(1-r)*n,[255*(r*o[0]+a),255*(r*o[1]+a),255*(r*o[2]+a)]},i.hcg.hsv=function(e){var t=e[1]/100,r=t+e[2]/100*(1-t),n=0;return r>0&&(n=t/r),[e[0],100*n,100*r]},i.hcg.hsl=function(e){var t=e[1]/100,r=e[2]/100*(1-t)+.5*t,n=0;return r>0&&r<.5?n=t/(2*r):r>=.5&&r<1&&(n=t/(2*(1-r))),[e[0],100*n,100*r]},i.hcg.hwb=function(e){var t=e[1]/100,r=t+e[2]/100*(1-t);return[e[0],100*(r-t),100*(1-r)]},i.hwb.hcg=function(e){var t=e[1]/100,r=1-e[2]/100,n=r-t,a=0;return n<1&&(a=(r-n)/(1-n)),[e[0],100*n,100*a]},i.apple.rgb=function(e){return[e[0]/65535*255,e[1]/65535*255,e[2]/65535*255]},i.rgb.apple=function(e){return[e[0]/255*65535,e[1]/255*65535,e[2]/255*65535]},i.gray.rgb=function(e){return[e[0]/100*255,e[0]/100*255,e[0]/100*255]},i.gray.hsl=i.gray.hsv=function(e){return[0,0,e[0]]},i.gray.hwb=function(e){return[0,100,e[0]]},i.gray.cmyk=function(e){return[0,0,0,e[0]]},i.gray.lab=function(e){return[e[0],0,0]},i.gray.hex=function(e){var t=255&Math.round(e[0]/100*255),r=((t<<16)+(t<<8)+t).toString(16).toUpperCase();return"000000".substring(r.length)+r},i.rgb.gray=function(e){return[(e[0]+e[1]+e[2])/3/255*100]}},function(e,t,r){var n=r(1),a=r(4),o=Object.hasOwnProperty,i={};for(var l in n)o.call(n,l)&&(i[n[l]]=l);var s=e.exports={to:{},get:{}};function u(e,t,r){return Math.min(Math.max(t,e),r)}function c(e){var t=Math.round(e).toString(16).toUpperCase();return t.length<2?"0"+t:t}s.get=function(e){var t,r;switch(e.substring(0,3).toLowerCase()){case"hsl":t=s.get.hsl(e),r="hsl";break;case"hwb":t=s.get.hwb(e),r="hwb";break;default:t=s.get.rgb(e),r="rgb"}return t?{model:r,value:t}:null},s.get.rgb=function(e){if(!e)return null;var t,r,a,i=[0,0,0,1];if(t=e.match(/^#([a-f0-9]{6})([a-f0-9]{2})?$/i)){for(a=t[2],t=t[1],r=0;r<3;r++){var l=2*r;i[r]=parseInt(t.slice(l,l+2),16)}a&&(i[3]=parseInt(a,16)/255)}else if(t=e.match(/^#([a-f0-9]{3,4})$/i)){for(a=(t=t[1])[3],r=0;r<3;r++)i[r]=parseInt(t[r]+t[r],16);a&&(i[3]=parseInt(a+a,16)/255)}else if(t=e.match(/^rgba?\(\s*([+-]?\d+)(?=[\s,])\s*(?:,\s*)?([+-]?\d+)(?=[\s,])\s*(?:,\s*)?([+-]?\d+)\s*(?:[,|\/]\s*([+-]?[\d\.]+)(%?)\s*)?\)$/)){for(r=0;r<3;r++)i[r]=parseInt(t[r+1],0);t[4]&&(t[5]?i[3]=.01*parseFloat(t[4]):i[3]=parseFloat(t[4]))}else{if(!(t=e.match(/^rgba?\(\s*([+-]?[\d\.]+)\%\s*,?\s*([+-]?[\d\.]+)\%\s*,?\s*([+-]?[\d\.]+)\%\s*(?:[,|\/]\s*([+-]?[\d\.]+)(%?)\s*)?\)$/)))return(t=e.match(/^(\w+)$/))?"transparent"===t[1]?[0,0,0,0]:o.call(n,t[1])?((i=n[t[1]])[3]=1,i):null:null;for(r=0;r<3;r++)i[r]=Math.round(2.55*parseFloat(t[r+1]));t[4]&&(t[5]?i[3]=.01*parseFloat(t[4]):i[3]=parseFloat(t[4]))}for(r=0;r<3;r++)i[r]=u(i[r],0,255);return i[3]=u(i[3],0,1),i},s.get.hsl=function(e){if(!e)return null;var t=e.match(/^hsla?\(\s*([+-]?(?:\d{0,3}\.)?\d+)(?:deg)?\s*,?\s*([+-]?[\d\.]+)%\s*,?\s*([+-]?[\d\.]+)%\s*(?:[,|\/]\s*([+-]?(?=\.\d|\d)(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d+)?)\s*)?\)$/);if(t){var r=parseFloat(t[4]);return[(parseFloat(t[1])%360+360)%360,u(parseFloat(t[2]),0,100),u(parseFloat(t[3]),0,100),u(isNaN(r)?1:r,0,1)]}return null},s.get.hwb=function(e){if(!e)return null;var t=e.match(/^hwb\(\s*([+-]?\d{0,3}(?:\.\d+)?)(?:deg)?\s*,\s*([+-]?[\d\.]+)%\s*,\s*([+-]?[\d\.]+)%\s*(?:,\s*([+-]?(?=\.\d|\d)(?:0|[1-9]\d*)?(?:\.\d*)?(?:[eE][+-]?\d+)?)\s*)?\)$/);if(t){var r=parseFloat(t[4]);return[(parseFloat(t[1])%360+360)%360,u(parseFloat(t[2]),0,100),u(parseFloat(t[3]),0,100),u(isNaN(r)?1:r,0,1)]}return null},s.to.hex=function(){var e=a(arguments);return"#"+c(e[0])+c(e[1])+c(e[2])+(e[3]<1?c(Math.round(255*e[3])):"")},s.to.rgb=function(){var e=a(arguments);return e.length<4||1===e[3]?"rgb("+Math.round(e[0])+", "+Math.round(e[1])+", "+Math.round(e[2])+")":"rgba("+Math.round(e[0])+", "+Math.round(e[1])+", "+Math.round(e[2])+", "+e[3]+")"},s.to.rgb.percent=function(){var e=a(arguments),t=Math.round(e[0]/255*100),r=Math.round(e[1]/255*100),n=Math.round(e[2]/255*100);return e.length<4||1===e[3]?"rgb("+t+"%, "+r+"%, "+n+"%)":"rgba("+t+"%, "+r+"%, "+n+"%, "+e[3]+")"},s.to.hsl=function(){var e=a(arguments);return e.length<4||1===e[3]?"hsl("+e[0]+", "+e[1]+"%, "+e[2]+"%)":"hsla("+e[0]+", "+e[1]+"%, "+e[2]+"%, "+e[3]+")"},s.to.hwb=function(){var e=a(arguments),t="";return e.length>=4&&1!==e[3]&&(t=", "+e[3]),"hwb("+e[0]+", "+e[1]+"%, "+e[2]+"%"+t+")"},s.to.keyword=function(e){return i[e.slice(0,3)]}},function(e,t,r){"use strict";var n=r(5),a=Array.prototype.concat,o=Array.prototype.slice,i=e.exports=function(e){for(var t=[],r=0,i=e.length;r<i;r++){var l=e[r];n(l)?t=a.call(t,o.call(l)):t.push(l)}return t};i.wrap=function(e){return function(){return e(i(arguments))}}},function(e,t){e.exports=function(e){return!(!e||"string"==typeof e)&&(e instanceof Array||Array.isArray(e)||e.length>=0&&(e.splice instanceof Function||Object.getOwnPropertyDescriptor(e,e.length-1)&&"String"!==e.constructor.name))}},function(e,t,r){var n=r(2),a=r(8),o={};Object.keys(n).forEach((function(e){o[e]={},Object.defineProperty(o[e],"channels",{value:n[e].channels}),Object.defineProperty(o[e],"labels",{value:n[e].labels});var t=a(e);Object.keys(t).forEach((function(r){var n=t[r];o[e][r]=function(e){var t=function(t){if(null==t)return t;arguments.length>1&&(t=Array.prototype.slice.call(arguments));var r=e(t);if("object"==typeof r)for(var n=r.length,a=0;a<n;a++)r[a]=Math.round(r[a]);return r};return"conversion"in e&&(t.conversion=e.conversion),t}(n),o[e][r].raw=function(e){var t=function(t){return null==t?t:(arguments.length>1&&(t=Array.prototype.slice.call(arguments)),e(t))};return"conversion"in e&&(t.conversion=e.conversion),t}(n)}))})),e.exports=o},function(e,t,r){"use strict";e.exports={aliceblue:[240,248,255],antiquewhite:[250,235,215],aqua:[0,255,255],aquamarine:[127,255,212],azure:[240,255,255],beige:[245,245,220],bisque:[255,228,196],black:[0,0,0],blanchedalmond:[255,235,205],blue:[0,0,255],blueviolet:[138,43,226],brown:[165,42,42],burlywood:[222,184,135],cadetblue:[95,158,160],chartreuse:[127,255,0],chocolate:[210,105,30],coral:[255,127,80],cornflowerblue:[100,149,237],cornsilk:[255,248,220],crimson:[220,20,60],cyan:[0,255,255],darkblue:[0,0,139],darkcyan:[0,139,139],darkgoldenrod:[184,134,11],darkgray:[169,169,169],darkgreen:[0,100,0],darkgrey:[169,169,169],darkkhaki:[189,183,107],darkmagenta:[139,0,139],darkolivegreen:[85,107,47],darkorange:[255,140,0],darkorchid:[153,50,204],darkred:[139,0,0],darksalmon:[233,150,122],darkseagreen:[143,188,143],darkslateblue:[72,61,139],darkslategray:[47,79,79],darkslategrey:[47,79,79],darkturquoise:[0,206,209],darkviolet:[148,0,211],deeppink:[255,20,147],deepskyblue:[0,191,255],dimgray:[105,105,105],dimgrey:[105,105,105],dodgerblue:[30,144,255],firebrick:[178,34,34],floralwhite:[255,250,240],forestgreen:[34,139,34],fuchsia:[255,0,255],gainsboro:[220,220,220],ghostwhite:[248,248,255],gold:[255,215,0],goldenrod:[218,165,32],gray:[128,128,128],green:[0,128,0],greenyellow:[173,255,47],grey:[128,128,128],honeydew:[240,255,240],hotpink:[255,105,180],indianred:[205,92,92],indigo:[75,0,130],ivory:[255,255,240],khaki:[240,230,140],lavender:[230,230,250],lavenderblush:[255,240,245],lawngreen:[124,252,0],lemonchiffon:[255,250,205],lightblue:[173,216,230],lightcoral:[240,128,128],lightcyan:[224,255,255],lightgoldenrodyellow:[250,250,210],lightgray:[211,211,211],lightgreen:[144,238,144],lightgrey:[211,211,211],lightpink:[255,182,193],lightsalmon:[255,160,122],lightseagreen:[32,178,170],lightskyblue:[135,206,250],lightslategray:[119,136,153],lightslategrey:[119,136,153],lightsteelblue:[176,196,222],lightyellow:[255,255,224],lime:[0,255,0],limegreen:[50,205,50],linen:[250,240,230],magenta:[255,0,255],maroon:[128,0,0],mediumaquamarine:[102,205,170],mediumblue:[0,0,205],mediumorchid:[186,85,211],mediumpurple:[147,112,219],mediumseagreen:[60,179,113],mediumslateblue:[123,104,238],mediumspringgreen:[0,250,154],mediumturquoise:[72,209,204],mediumvioletred:[199,21,133],midnightblue:[25,25,112],mintcream:[245,255,250],mistyrose:[255,228,225],moccasin:[255,228,181],navajowhite:[255,222,173],navy:[0,0,128],oldlace:[253,245,230],olive:[128,128,0],olivedrab:[107,142,35],orange:[255,165,0],orangered:[255,69,0],orchid:[218,112,214],palegoldenrod:[238,232,170],palegreen:[152,251,152],paleturquoise:[175,238,238],palevioletred:[219,112,147],papayawhip:[255,239,213],peachpuff:[255,218,185],peru:[205,133,63],pink:[255,192,203],plum:[221,160,221],powderblue:[176,224,230],purple:[128,0,128],rebeccapurple:[102,51,153],red:[255,0,0],rosybrown:[188,143,143],royalblue:[65,105,225],saddlebrown:[139,69,19],salmon:[250,128,114],sandybrown:[244,164,96],seagreen:[46,139,87],seashell:[255,245,238],sienna:[160,82,45],silver:[192,192,192],skyblue:[135,206,235],slateblue:[106,90,205],slategray:[112,128,144],slategrey:[112,128,144],snow:[255,250,250],springgreen:[0,255,127],steelblue:[70,130,180],tan:[210,180,140],teal:[0,128,128],thistle:[216,191,216],tomato:[255,99,71],turquoise:[64,224,208],violet:[238,130,238],wheat:[245,222,179],white:[255,255,255],whitesmoke:[245,245,245],yellow:[255,255,0],yellowgreen:[154,205,50]}},function(e,t,r){var n=r(2);function a(e){var t=function(){for(var e={},t=Object.keys(n),r=t.length,a=0;a<r;a++)e[t[a]]={distance:-1,parent:null};return e}(),r=[e];for(t[e].distance=0;r.length;)for(var a=r.pop(),o=Object.keys(n[a]),i=o.length,l=0;l<i;l++){var s=o[l],u=t[s];-1===u.distance&&(u.distance=t[a].distance+1,u.parent=a,r.unshift(s))}return t}function o(e,t){return function(r){return t(e(r))}}function i(e,t){for(var r=[t[e].parent,e],a=n[t[e].parent][e],i=t[e].parent;t[i].parent;)r.unshift(t[i].parent),a=o(n[t[i].parent][i],a),i=t[i].parent;return a.conversion=r,a}e.exports=function(e){for(var t=a(e),r={},n=Object.keys(t),o=n.length,l=0;l<o;l++){var s=n[l];null!==t[s].parent&&(r[s]=i(s,t))}return r}},function(e,t,r){"use strict";r.r(t),r.d(t,"run",(function(){return ye})),r.d(t,"init",(function(){return me})),r.d(t,"convertBg",(function(){return ve})),r.d(t,"extend",(function(){return ke}));var n="(prefers-color-scheme: dark)",a="data_color_scheme_dark",o="".concat(1*new Date).concat(Math.round(10*Math.random())),i="data-darkmode-color-".concat(o),l="data-darkmode-bgcolor-".concat(o),s="data-darkmode-original-color-".concat(o),u="data-darkmode-original-bgcolor-".concat(o),c="data-darkmode-bgimage-".concat(o),h=window.getInnerHeight&&window.getInnerHeight()||window.innerHeight||document.documentElement.clientHeight,f=["TABLE","TR","TD","TH"],d=/ !important$/,g={hasInit:!1,begin:null,showFirstPage:null,error:null,mode:"",whitelist:{tagName:["MPCPS","IFRAME"]},needJudgeFirstPage:!0,delayBgJudge:!1,container:null,cssSelectorsPrefix:"",defaultLightTextColor:"#191919",defaultLightBgColor:"#fff",defaultDarkTextColor:"#a3a3a3",defaultDarkBgColor:"#191919",set:function(e,t,r){var n=t[r];switch(e){case"boolean":"boolean"==typeof n&&(this[r]=n);break;case"string":"string"==typeof n&&""!==n&&(this[r]=n);break;case"function":"function"==typeof n&&(this[r]=n);break;case"dom":n instanceof HTMLElement&&(this[r]=n)}}};function b(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}function p(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}function y(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function m(e,t,r){return t&&y(e.prototype,t),r&&y(e,r),Object.defineProperty(e,"prototype",{writable:!1}),e}var v=[],k=[],w=function(){function e(){p(this,e)}return m(e,[{key:"loopTimes",get:function(){return se.loopTimes}},{key:"isDarkmode",get:function(){return de.isDarkmode}},{key:"addCss",value:function(e,t){var r=!(arguments.length>2&&void 0!==arguments[2])||arguments[2];(r?v:k).push(he.genCss(e,t.map((function(e){var t=e.key,r=e.value;return he.genCssKV(t,r)})).join("")))}}]),e}(),x=function(){function e(){p(this,e),b(this,"_plugins",[]),b(this,"length",0),b(this,"loopTimes",0),b(this,"firstPageStyle",""),b(this,"otherPageStyle",""),b(this,"firstPageStyleNoMQ",""),b(this,"otherPageStyleNoMQ","")}return m(e,[{key:"extend",value:function(e){this._plugins.push(new(e(w))),this.length++}},{key:"emit",value:function(e){for(var t=arguments.length,r=new Array(t>1?t-1:0),n=1;n<t;n++)r[n-1]=arguments[n];this._plugins.forEach((function(t){"function"==typeof t[e]&&t[e].apply(t,r)}))}},{key:"addCss",value:function(e){e?(this.firstPageStyle+=v.join(""),this.firstPageStyleNoMQ+=k.join("")):(this.otherPageStyle+=v.join(""),this.otherPageStyleNoMQ+=k.join(""))}},{key:"resetCss",value:function(){v=[],k=[]}}]),e}();function M(e){return(M="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(e){return typeof e}:function(e){return e&&"function"==typeof Symbol&&e.constructor===Symbol&&e!==Symbol.prototype?"symbol":typeof e})(e)}function _(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function C(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}var j=function(){function e(t){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),C(this,"_queue",[]),C(this,"_idx",0),this._prefix=t}var t,r,n;return t=e,(r=[{key:"push",value:function(e){var t="".concat(this._prefix).concat(this._idx++);e.classList.add(t),this._queue.push({el:e,className:t,updated:!g.delayBgJudge})}},{key:"forEach",value:function(e){var t=[];for(this._queue.forEach((function(r,n){r.updated&&(t.unshift(n),M(e)&&e(r.el))}));t.length;)this._queue.splice(t.shift(),1)}},{key:"update",value:function(e){this._queue.forEach((function(t){t.updated||Array.prototype.some.call(e,(function(e){return!(1!==e.nodeType||!e.classList.contains(t.className)||(t.el=e,t.updated=!0,0))}))}))}}])&&_(t.prototype,r),n&&_(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}();function P(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function S(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}var A=function(){function e(t){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),S(this,"_stack",[]),S(this,"_idx",0),this._prefix=t}var t,r,n;return t=e,(r=[{key:"push",value:function(e,t){var r="".concat(this._prefix).concat(this._idx++);e.classList.add(r),this._stack.unshift({el:e,className:r,cssKV:t,updated:!g.delayBgJudge})}},{key:"contains",value:function(e,t){var r=e.getBoundingClientRect(),n=[];for(this._stack.forEach((function(e,t){if(e.updated){e.rect||(e.rect=e.el.getBoundingClientRect());var a=e.rect;r.top>=a.bottom||r.bottom<=a.top||r.left>=a.right||r.right<=a.left||n.unshift(t)}}));n.length;){var a=this._stack.splice(n.shift(),1)[0];"function"==typeof t&&t(a)}}},{key:"update",value:function(e){this._stack.forEach((function(t){t.updated||Array.prototype.some.call(e,(function(e){return!(1!==e.nodeType||!e.classList.contains(t.className)||(t.el=e,t.updated=!0,0))}))}))}}])&&P(t.prototype,r),n&&P(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}();function O(e,t){return function(e){if(Array.isArray(e))return e}(e)||function(e,t){var r=null==e?null:"undefined"!=typeof Symbol&&e[Symbol.iterator]||e["@@iterator"];if(null==r)return;var n,a,o=[],i=!0,l=!1;try{for(r=r.call(e);!(i=(n=r.next()).done)&&(o.push(n.value),!t||o.length!==t);i=!0);}catch(e){l=!0,a=e}finally{try{i||null==r.return||r.return()}finally{if(l)throw a}}return o}(e,t)||function(e,t){if(!e)return;if("string"==typeof e)return B(e,t);var r=Object.prototype.toString.call(e).slice(8,-1);"Object"===r&&e.constructor&&(r=e.constructor.name);if("Map"===r||"Set"===r)return Array.from(e);if("Arguments"===r||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(r))return B(e,t)}(e,t)||function(){throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function B(e,t){(null==t||t>e.length)&&(t=e.length);for(var r=0,n=new Array(t);r<t;r++)n[r]=e[r];return n}function E(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function T(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}var N=function(){function e(){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),T(this,"_firstPageStyle",""),T(this,"_otherPageStyle",""),T(this,"isFinish",!1)}var t,r,o;return t=e,(r=[{key:"genCssKV",value:function(e,t){return"".concat(e,": ").concat(t," !important;")}},{key:"genCss",value:function(e,t){return"".concat("dark"===g.mode?"html.".concat(a," "):"").concat(g.cssSelectorsPrefix&&"".concat(g.cssSelectorsPrefix," "),".").concat(e,"{").concat(t,"}")}},{key:"addCss",value:function(e,t){this[t?"_firstPageStyle":"_otherPageStyle"]+=e,se.addCss(t)}},{key:"writeStyle",value:function(e){!e&&de.isDarkmode&&(this.isFinish=!0);var t=(de.isDarkmode?[{target:this,key:["_firstPageStyle","_otherPageStyle"],needMediaQuery:!0}]:[]).concat([{target:se,key:["firstPageStyle","otherPageStyle"],needMediaQuery:!0},{target:se,key:["firstPageStyleNoMQ","otherPageStyleNoMQ"],needMediaQuery:!1}]).map((function(t){var r=t.target,a=O(t.key,2),o=a[0],i=a[1],l=t.needMediaQuery,s="";e?s=o:(r[i]=r[o]+r[i],r[o]="",s=i);var u=r[s];return u?(r[s]="","dark"!==g.mode&&l?"@media ".concat(n," {").concat(u,"}"):u):""})).join("");t&&document.head.insertAdjacentHTML("beforeend",'<style type="text/css">'.concat(t,"</style>"))}}])&&E(t.prototype,r),o&&E(t,o),Object.defineProperty(t,"prototype",{writable:!1}),e}();function F(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function D(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}function L(e){return function(e){if(Array.isArray(e))return q(e)}(e)||function(e){if("undefined"!=typeof Symbol&&null!=e[Symbol.iterator]||null!=e["@@iterator"])return Array.from(e)}(e)||function(e,t){if(!e)return;if("string"==typeof e)return q(e,t);var r=Object.prototype.toString.call(e).slice(8,-1);"Object"===r&&e.constructor&&(r=e.constructor.name);if("Map"===r||"Set"===r)return Array.from(e);if("Arguments"===r||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(r))return q(e,t)}(e)||function(){throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function q(e,t){(null==t||t>e.length)&&(t=e.length);for(var r=0,n=new Array(t);r<t;r++)n[r]=e[r];return n}function I(e){var t;return(t=[e]).concat.apply(t,L(e.querySelectorAll("*")))}var z={"ue-table-interlace-color-single":"#fcfcfc","ue-table-interlace-color-double":"#f7faff"};var V=function(){function e(){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),D(this,"_nodes",[]),D(this,"_firstPageNodes",[]),D(this,"_delayNodes",[]),D(this,"showFirstPage",!1)}var t,r,n;return t=e,(r=[{key:"length",get:function(){return this._nodes.length}},{key:"set",value:function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:[];this._nodes=e}},{key:"get",value:function(){var e=[];return this._nodes.length?(e=this._nodes,de.isDarkmode&&(this._nodes=[])):this._delayNodes.length?(e=this._delayNodes,this._delayNodes=[]):g.container&&(e=g.container.querySelectorAll("*")),e}},{key:"delay",value:function(){var e=this;Array.prototype.forEach.call(this._nodes,(function(t){return e._delayNodes.push(t)})),this._nodes=[]}},{key:"hasDelay",value:function(){return this._delayNodes.length>0}},{key:"addFirstPageNode",value:function(e){this._firstPageNodes.push(e)}},{key:"showFirstPageNodes",value:function(){this._firstPageNodes.forEach((function(e){return e.style.visibility="visible"})),this.showFirstPage=!0}},{key:"emptyFirstPageNodes",value:function(){this._firstPageNodes=[]}}])&&F(t.prototype,r),n&&F(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}(),K=r(0),J=r.n(K),$=r(1),H=r.n($);function R(e,t){return function(e){if(Array.isArray(e))return e}(e)||function(e,t){var r=null==e?null:"undefined"!=typeof Symbol&&e[Symbol.iterator]||e["@@iterator"];if(null==r)return;var n,a,o=[],i=!0,l=!1;try{for(r=r.call(e);!(i=(n=r.next()).done)&&(o.push(n.value),!t||o.length!==t);i=!0);}catch(e){l=!0,a=e}finally{try{i||null==r.return||r.return()}finally{if(l)throw a}}return o}(e,t)||U(e,t)||function(){throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function Q(e){return function(e){if(Array.isArray(e))return G(e)}(e)||function(e){if("undefined"!=typeof Symbol&&null!=e[Symbol.iterator]||null!=e["@@iterator"])return Array.from(e)}(e)||U(e)||function(){throw new TypeError("Invalid attempt to spread non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}()}function U(e,t){if(e){if("string"==typeof e)return G(e,t);var r=Object.prototype.toString.call(e).slice(8,-1);return"Object"===r&&e.constructor&&(r=e.constructor.name),"Map"===r||"Set"===r?Array.from(e):"Arguments"===r||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(r)?G(e,t):void 0}}function G(e,t){(null==t||t>e.length)&&(t=e.length);for(var r=0,n=new Array(t);r<t;r++)n[r]=e[r];return n}function W(e,t){for(var r=0;r<t.length;r++){var n=t[r];n.enumerable=n.enumerable||!1,n.configurable=!0,"value"in n&&(n.writable=!0),Object.defineProperty(e,n.key,n)}}function X(e,t,r){return t in e?Object.defineProperty(e,t,{value:r,enumerable:!0,configurable:!0,writable:!0}):e[t]=r,e}H.a.windowtext=[0,0,0],H.a.transparent=[255,255,255,0];var Y=new RegExp(Object.keys(H.a).map((function(e){return"\\b".concat(e,"\\b")})).join("|"),"ig"),Z=/\brgba?\([^)]+\)/i,ee=/\brgba?\([^)]+\)/gi,te=function(e){return e.replace(d,"")},re=function(e,t){return te(e).replace(Y,(function(e){if(!t&&"transparent"===e)return e;var r=H.a[e.toLowerCase()];return"".concat(r.length>3?"rgba":"rgb","(").concat(r.toString(),")")}))},ne=function(e){if(!e||e.length<1)return"";if(1===e.length)return e[0];for(var t=e.shift(),r=e.shift();r;){var n=J()(r);t=J()(t).mix(n,n.alpha()),r=e.shift()}return t},ae=function(e){var t=re(e);return Z.test(t)?t:""},oe=function(e){return(299*e[0]+587*e[1]+114*e[2])/1e3},ie=function(e,t){var r=e/oe(t),n=Math.min(255,t[0]*r),a=Math.min(255,t[1]*r),o=Math.min(255,t[2]*r);return 0===a||255===n||255===o?a=(1e3*e-299*n-114*o)/587:0===n?n=(1e3*e-587*a-114*o)/299:0!==o&&255!==a||(o=(1e3*e-299*n-587*a)/114),J.a.rgb(n,a,o)},le=function(){function e(){!function(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}(this,e),X(this,"_idx",0),X(this,"_defaultDarkTextColorRgb",J()(g.defaultDarkTextColor).rgb().array()),X(this,"_defaultDarkBgColorRgb",J()(g.defaultDarkBgColor).rgb().array()),X(this,"_defaultDarkBgColorHSL",J()(g.defaultDarkBgColor).hsl().array()),X(this,"_defaultDarkTextColorBrightness",oe(this._defaultDarkTextColorRgb)),X(this,"_defaultDarkBgColorBrightness",oe(this._defaultDarkBgColorRgb)),X(this,"_defaultDarkBgColorHslBrightness",this._defaultDarkBgColorHSL[2]),X(this,"_maxLimitOffsetBrightness",this._defaultDarkTextColorBrightness-this._defaultDarkBgColorBrightness),X(this,"isDarkmode",!1)}var t,r,n;return t=e,(r=[{key:"_adjustTextBrightness",value:function(e,t){var r=t.rgb().array(),n=t.alpha(),a=oe(r)*n+this._defaultDarkBgColorBrightness*(1-n),o=e.rgb().array(),i=e.hsl().array(),l=e.alpha(),s=oe(o),u=Math.abs(a-s);if(s>=250)return e;if(u>this._maxLimitOffsetBrightness&&a<=this._defaultDarkBgColorBrightness+2)return ie(this._maxLimitOffsetBrightness+a,o).alpha(l);if(u>=65)return e;if(a>=100){if(i[2]>50){i[2]=90-i[2];var c=J.a.hsl.apply(J.a,Q(i)).alpha(l);return this._adjustTextBrightness(c,t)}return ie(Math.min(this._maxLimitOffsetBrightness,a-65),o).alpha(l)}if(i[2]<=40){i[2]=90-i[2];var h=J.a.hsl.apply(J.a,Q(i)).alpha(l);return this._adjustTextBrightness(h,t)}return ie(Math.min(this._maxLimitOffsetBrightness,a+65),o).alpha(l)}},{key:"_adjustBackgroundBrightness",value:function(e){var t=e.rgb().array(),r=e.hsl().array(),n=e.alpha(),a=oe(t),o=e;return 0===r[1]&&r[2]>40||a>250?o=J.a.hsl(0,0,Math.min(100,100+this._defaultDarkBgColorHslBrightness-r[2])):a>190?o=ie(190,t).alpha(n):r[2]<22&&(r[2]=22,o=J.a.hsl.apply(J.a,Q(r))),o.alpha(n).rgb()}},{key:"_adjustBrightness",value:function(e,t,r){var n,a=e.alpha(),o="";if(r.isBgColor){if(t.getAttribute(c)&&a>=.05&&t.removeAttribute(c),n=this._adjustBackgroundBrightness(e),!r.hasInlineColor){var s=t.getAttribute(i)||g.defaultLightTextColor,u=n||e,h=this._adjustBrightness(J()(s),t,{isTextColor:!0,parentElementBgColorStr:u});h.newColor?o+=he.genCssKV("color",h.newColor):o+=he.genCssKV("color",s)}}else if(r.isTextColor||r.isBorderColor){var f=r.parentElementBgColorStr||r.isTextColor&&t.getAttribute(l)||g.defaultDarkBgColor,d=J()(f);t.getAttribute(c)||(n=this._adjustTextBrightness(e,d),se.emit("afterConvertTextColor",t,{fontColor:n,bgColor:d}))}else r.isTextShadow&&(t.getAttribute(c)||(n=this._adjustBackgroundBrightness(e)));return{newColor:n&&e.toString()!==n.toString()&&n.alpha(a).rgb(),extStyle:o}}},{key:"_try",value:function(e){try{return e()}catch(e){console.log("An error occurred when running the dark mode conversion algorithm\n",e),"function"==typeof g.error&&g.error(e)}}},{key:"convert",value:function(e){var t=this;se.resetCss(),se.emit("beforeConvertNode",e);var r,n,a="";if(this.isDarkmode){var o=e.nodeName;if(g.whitelist.tagName.indexOf(o)>-1)return"";var h,b,p=e.style,y="",m=!1,v=!1,k=!1,w=(p.cssText&&p.cssText.split(";")||[]).map((function(e){var t=e.indexOf(":");return[e.slice(0,t).toLowerCase(),e.slice(t+1)].map((function(e){return(e||"").replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g,"")}))})).filter((function(e){var t=R(e,2),r=t[0],n=t[1];return"color"===r?m=!0:/background/i.test(r)&&(v=!0,"background-position"===r?h=n:"background-size"===r&&(b=n)),(/background/i.test(r)||/^(-webkit-)?border-image/.test(r))&&/url\([^)]*\)/i.test(n)&&(k=!0),["-webkit-border-image","border-image","color","background-color","background-image","background","border","border-top","border-right","border-bottom","border-left","border-color","border-top-color","border-right-color","border-bottom-color","border-left-color","-webkit-text-fill-color","-webkit-text-stroke","-webkit-text-stroke-color","text-shadow"].indexOf(r)>-1})).sort((function(e,t){var r=R(e,1)[0],n=R(t,1)[0];return"color"===r||"background-image"===r&&"background-color"===n||0===n.indexOf("-webkit-text")?1:-1}));f.indexOf(o)>-1&&!v&&this._try((function(){var t=function(e){var t=null;return Array.prototype.some.call(e.classList,(function(e){return!!z[e]&&(t=z[e],!0)})),t}(e);t||(t=e.getAttribute("bgcolor")),t&&(w.unshift(["background-color",J()(t).toString()]),v=!0)})),"FONT"!==o||m||this._try((function(){var t=e.getAttribute("color");t&&(w.push(["color",J()(t).toString()]),m=!0)}));var x="",M="",_=0;if(w.some((function(e,r){var n=R(e,2),a=n[0],o=n[1];return t._try((function(){if(0!==a.indexOf("-webkit-text"))return _=r,!0;switch(a){case"-webkit-text-fill-color":x=ae(o);break;case"-webkit-text-stroke":var e=o.split(" ");2===e.length&&(M=ae(e[1]));break;case"-webkit-text-stroke-color":M=ae(o)}return!1}))})),x&&(m?w[w.length-1]=["-webkit-text-fill-color",x]:(w.push(["-webkit-text-fill-color",x]),m=!0)),_&&(w.splice(0,_),M&&w.unshift(["-webkit-text-stroke-color",M])),w.forEach((function(r){var n=R(r,2),a=n[0],o=n[1];return t._try((function(){var r,n=o,f=!1,w=/^background/.test(a),x="text-shadow"===a,M=["-webkit-text-stroke-color","color","-webkit-text-fill-color"].indexOf(a),_=/^border/.test(a),C=/gradient/.test(o),j=[],P="";if(o=re(o,C),Z.test(o)){if(C){for(var S=ee.exec(o);S;)j.push(S[0]),S=ee.exec(o);r=ne(j)}var A=0;o=o.replace(ee,(function(n){C&&(n=r,f=!0);var a=t._adjustBrightness(J()(n),e,{isBgColor:w,isTextShadow:x,isTextColor:M>-1,isBorderColor:_,hasInlineColor:m}),o=!k&&a.newColor;if(P+=a.extStyle,w||M>0){var h=w?l:i,d=w?u:s,b=o?o.toString():n;0===A&&I(e).forEach((function(e){var t=e.getAttribute(d)||g.defaultLightBgColor;e.setAttribute(h,b),e.setAttribute(d,t.split("|").concat(n).join("|")),w&&J()(b).alpha()>=.05&&e.getAttribute(c)&&e.removeAttribute(c)}))}return o&&(f=!0),A+=1,o||n})).replace(/\s?!\s?important/gi,"")}if(P&&(y+=P),!(e instanceof SVGElement)){var O=/^background/.test(a),B=/^(-webkit-)?border-image/.test(a);if((O||B)&&/url\([^)]*\)/i.test(o)){f=!0;var E=ne((e.getAttribute(u)||g.defaultLightBgColor).split("|"));if(o=o.replace(/^(.*?)url\(([^)]*)\)(.*)$/i,(function(t){var r=t,n="",o="",i="";return"1"!==e.getAttribute(c)&&I(e).forEach((function(e){return e.setAttribute(c,"1")})),O?(r="linear-gradient(".concat("rgba(0,0,0,0.2)",", ").concat("rgba(0,0,0,0.2)","),").concat(t),i=he.genCssKV(a,"".concat(r,",linear-gradient(").concat(E,", ").concat(E,")")),h&&(n="top left,".concat(h),y+=he.genCssKV("background-position","".concat(n)),i+=he.genCssKV("background-position","".concat(n,",top left"))),b&&(o="100%,".concat(b),y+=he.genCssKV("background-size","".concat(o)),i+=he.genCssKV("background-size","".concat(o,",100%"))),ce.push(e,i)):!v&&ce.push(e,he.genCssKV("background-image","linear-gradient(".concat("rgba(0,0,0,0.2)",", ").concat("rgba(0,0,0,0.2)","),linear-gradient(").concat(E,", ").concat(E,")"))),r})),!m){var T=ne((e.getAttribute(s)||g.defaultLightTextColor).split("|"));y+=he.genCssKV("color",T),I(e).forEach((function(e){return e.setAttribute(i,T)}))}}}f&&(d.test(n)&&(p[a]=te(n)),C?ce.push(e,he.genCssKV(a,o)):y+=he.genCssKV(a,o))}))})),y){e.setAttribute("data-style",p.cssText);var C="".concat("js_darkmode__").concat(this._idx++);e.classList.add(C),a+=y?he.genCss(C,y):""}r=e,n="",Array.prototype.forEach.call(r.childNodes,(function(e){3===e.nodeType&&(n+=e.nodeValue.replace(/\s/g,""))})),n.length>0&&(g.delayBgJudge?ue.push(e):ce.contains(e,(function(e){a+=he.genCss(e.className,e.cssKV)})))}return se.emit("afterConvertNode",e),a}}])&&W(t.prototype,r),n&&W(t,n),Object.defineProperty(t,"prototype",{writable:!1}),e}(),se=new x,ue=new j("".concat("js_darkmode__","text__")),ce=new A("".concat("js_darkmode__","bg__")),he=new N,fe=new V,de=new le,ge=new RegExp("".concat("js_darkmode__","[^ ]+"),"g"),be=null,pe=function(e){var t=arguments.length>1&&void 0!==arguments[1]?arguments[1]:{type:"dom"};if(t.force&&(he.isFinish=!1),!he.isFinish)try{de.isDarkmode=g.mode?"dark"===g.mode:e.matches,"dom"===t.type?(de.isDarkmode&&"function"==typeof g.begin&&g.begin(fe.hasDelay()),Array.prototype.forEach.call(fe.get(),(function(e){if(de.isDarkmode&&e.className&&"string"==typeof e.className&&(e.className=e.className.replace(ge,"")),de.isDarkmode||se.length)if(g.needJudgeFirstPage){var t=e.getBoundingClientRect(),r=t.top,n=t.bottom;r<=0&&n<=0?he.addCss(de.convert(e),!1):r>0&&r<h||n>0&&n<h?(fe.addFirstPageNode(e),he.addCss(de.convert(e),!0)):(g.needJudgeFirstPage=!1,he.writeStyle(!0),fe.showFirstPageNodes(),"function"==typeof g.showFirstPage&&g.showFirstPage(),he.addCss(de.convert(e),!1))}else he.addCss(de.convert(e),!1)})),se.loopTimes++):"bg"===t.type&&de.isDarkmode&&ue.forEach((function(e){return ce.contains(e,(function(e){he.addCss(he.genCss(e.className,e.cssKV),!1)}))})),(g.needJudgeFirstPage||!g.needJudgeFirstPage&&!fe.showFirstPage)&&"function"==typeof g.showFirstPage&&g.showFirstPage(),he.writeStyle(),fe.emptyFirstPageNodes(),de.isDarkmode||(g.needJudgeFirstPage=!1,g.delayBgJudge=!1,null===g.container&&"dom"===t.type&&fe.length&&fe.delay())}catch(e){console.log("An error occurred when running the dark mode conversion algorithm\n",e),"function"==typeof g.error&&g.error(e)}};function ye(e,t){me(t),fe.set(e),pe(be,{force:!0,type:"dom"})}function me(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};if(!g.hasInit){g.hasInit=!0;var t=g.whitelist.tagName;e.whitelist&&e.whitelist.tagName instanceof Array&&e.whitelist.tagName.forEach((function(e){e=e.toUpperCase(),-1===t.indexOf(e)&&t.push(e)})),["dark","light"].indexOf(e.mode)>-1&&(g.set("string",e,"mode"),document.getElementsByTagName("html")[0].classList.add(a)),g.set("function",e,"begin"),g.set("function",e,"showFirstPage"),g.set("function",e,"error"),g.set("boolean",e,"needJudgeFirstPage"),g.set("boolean",e,"delayBgJudge"),g.set("dom",e,"container"),g.set("string",e,"cssSelectorsPrefix"),g.set("string",e,"defaultLightTextColor"),g.set("string",e,"defaultLightBgColor"),g.set("string",e,"defaultDarkTextColor"),g.set("string",e,"defaultDarkBgColor"),!g.mode&&null===be&&window.matchMedia&&(be=window.matchMedia(n)).addListener(pe)}}function ve(e){fe.set(e),null!==g.container&&(ce.update(e),ue.update(e)),pe(be,{force:!0,type:"bg"})}function ke(e){e.forEach((function(e){return se.extend(e)}))}}])}));</script>
+
+    
+<script type="module" nonce="1176578612" reportloaderror>!function(){try{new Function("m","return import(m)")}catch(o){console.warn("vite: loading legacy build because dynamic import is unsupported, syntax error above should be ignored");var e=document.getElementById("vite-legacy-polyfill"),n=document.createElement("script");n.src=e.src,n.onload=function(){System.import(document.getElementById('vite-legacy-entry').getAttribute('src'))},document.body.appendChild(n)}}();</script>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    <style>
+      .cooldown_tips {
+        margin: 30px auto;
+        margin-top: 0;
+        display: flex;
+        align-items: center;
+        padding: 10px;
+        font-size: 14px;
+        background-color: #f6f7f9;
+        border-radius: 6px;
+      }   
+      .cooldown_tips_icon {
+        display: block;
+        width: 18px;
+        height: 18px;
+        margin-right: 8px;
+      }
+    </style>
+  </head>
+
+  <body id="activity-detail" class="zh_CN wx_wap_page 
+
+                                            wx_wap_desktop_fontsize_2    mm_appmsg
+ comment_feature
+ discuss_tab appmsg_skin_default appmsg_style_default">
+    
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+  var biz = "" || "MzkyNTIyNzIyMA==";
+  var sn = "" || "638d6951222bf9876eff3c86502c8bac" || "";
+  var mid = "" || "2247487189" || "";
+  var idx = "" || "1" || "";
+  window.__allowLoadResFromMp = true; // 允许从mp.weixin.qq.com加载js资源
+  // window.__loadAllResFromMp = true; // 所有js资源都从mp域名加载
+</script>
+
+<script  nonce="1176578612" reportloaderror>
+var page_begintime = (+new Date());
+// 辟谣需求
+var is_rumor = "";
+var norumor = "";
+if (!!(is_rumor * 1) && !(norumor*1) && !!biz && !!mid) {
+  if (!document.referrer || document.referrer.indexOf("mp.weixin.qq.com/mp/rumor") == -1){
+    location.href = "http://mp.weixin.qq.com/mp/rumor?action=info&__biz=" + biz + "&mid=" + mid + "&idx=" + idx + "&sn=" + sn + "#wechat_redirect";
+  }
+}
+</script>
+
+
+    
+
+
+
+
+
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+String.prototype.html = function (encode) {
+  var replace = ["&#39;", "'", "&quot;", '"', "&nbsp;", " ", "&gt;", ">", "&lt;", "<", "&yen;", "¥", "&amp;", "&"];
+  // 最新版的safari 12有一个BUG，如果使用字面量定义一个数组，var a = [1, 2, 3]
+  // 当调用了 a.reverse() 方法把变量 a 元素顺序反转成 3, 2, 1 后，
+  // 即使此页面刷新了， 或者此页面使用 A标签、 window.open 打开的页面，
+  // 只要调用到同一段代码， 变量 a 的元素顺序都会变成 3, 2, 1
+  // 所以这里不用 reverse 方法
+  /*
+  if (encode) {
+      replace.reverse();
+  }*/
+  var replaceReverse = ["&", "&amp;", "¥", "&yen;", "<", "&lt;", ">", "&gt;", " ", "&nbsp;", '"', "&quot;", "'", "&#39;"];
+  var target;
+  if (encode) {
+    target = replaceReverse;
+  } else {
+    target = replace;
+  }
+  for (var i = 0, str = this; i < target.length; i += 2) {
+    str = str.replace(new RegExp(target[i], 'g'), target[i + 1]);
+  }
+  return str;
+};
+
+window.isInWeixinApp = function () {
+  return /MicroMessenger/.test(navigator.userAgent);
+};
+
+window.getQueryFromURL = function (url) {
+  url = url || 'http://qq.com/s?a=b#rd'; // 做一层保护，保证URL是合法的
+  var tmp = url.split('?'),
+    query = (tmp[1] || "").split('#')[0].split('&'),
+    params = {};
+  for (var i = 0; i < query.length; i++) {
+    var arg = query[i].split('=');
+    params[arg[0]] = arg[1];
+  }
+  if (params['pass_ticket']) {
+    params['pass_ticket'] = encodeURIComponent(params['pass_ticket'].html(false).html(false).replace(/\s/g, "+"));
+  }
+  return params;
+};
+
+(function () {
+  var params = getQueryFromURL(location.href);
+  window.uin = params['uin'] || "" || '';
+  window.key = params['key'] || "" || '';
+  window.wxtoken = params['wxtoken'] || '';
+  window.pass_ticket = params['pass_ticket'] || '';
+  window.appmsg_token = "";
+
+  var ua = navigator.userAgent;
+  if (ua.match(/Mac\sOS\sX\s(\d+[\.|_]\d+)/) || ua.match(/Windows(\s+\w+)?\s+?(\d+\.\d+)/) || ua.match(/Linux\s/)) {
+    document.body.classList.add('pages_skin_pc');
+  }
+})();
+</script>
+    
+<script type="text/javascript" nonce="1176578612" reportloaderror>window.PAGE_MID="mmbizwap:appmsg/newindex.html"</script>
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+  var write_sceen_time = (+new Date());
+  var preview = "" * 1 || 0;
+  var can_use_wecoin = '1' * 1; // 是否个人号
+  var wecoin_tips = '0' * 1; // 是否出教育弹窗
+  /* var can_use_wecoin = 1; */
+  var wecoin_amount = '0' * 1; // 微信豆个数
+  var preview_percent = '0' * 1;
+</script>
+
+<div id="js_article" style="position:relative;" class="rich_media">
+  
+  <div id="js_top_ad_area" class="top_banner"></div>
+  
+  <div id="js_base_container" class="rich_media_inner">
+    
+    
+    <div id="page-content" class="rich_media_area_primary">
+      <div class="rich_media_area_primary_inner">
+        
+        
+        
+                <div id="img-content" class="rich_media_wrp">
+          
+          <h1 class="rich_media_title " id="activity-name">
+            
+细节藏魔鬼:容量瓶不相容引入杂质
+          </h1>
+          <div id="meta_content" class="rich_media_meta_list">
+                                      <span id="copyright_logo" class="wx_tap_link js_wx_tap_highlight rich_media_meta icon_appmsg_tag appmsg_title_tag weui-wa-hotarea">原创</span>
+                                                      <span class="rich_media_meta rich_media_meta_text">
+                                      小花晒太阳
+                                  </span>
+                                      
+                        <span class="rich_media_meta rich_media_meta_nickname" id="profileBt">
+              <a href="javascript:void(0);" class="wx_tap_link js_wx_tap_highlight weui-wa-hotarea" id="js_name">
+                小花晒太阳              </a>
+              <div id="js_profile_qrcode" aria-hidden="true" class="profile_container" style="display:none;">
+                <div class="profile_inner">
+                  <strong class="profile_nickname">小花晒太阳</strong>
+                  <img class="profile_avatar" id="js_profile_qrcode_img" src="" alt="">
+
+                  <p class="profile_meta">
+                  <label class="profile_meta_label">微信号</label>
+                  <span class="profile_meta_value">Xiaohuashaitaiyang</span>
+                  </p>
+
+                  <p class="profile_meta">
+                  <label class="profile_meta_label">功能介绍</label>
+                  <span class="profile_meta_value">总结药物-质量研究相关经验</span>
+                  </p>
+                </div>
+                <span class="profile_arrow_wrp" id="js_profile_arrow_wrp">
+                  <i class="profile_arrow arrow_out"></i>
+                  <i class="profile_arrow arrow_in"></i>
+                </span>
+              </div>
+            </span>
+            <em id="publish_time" class="rich_media_meta rich_media_meta_text"></em>
+            <em id="js_ip_wording_wrp" class="rich_media_meta rich_media_meta_text" role="option" style="display: none;">发表于<span id="js_ip_wording" ></span></em>
+
+          </div>
+
+          
+                                                                              <div id="js_tags" class="article-tag__list single-tag__wrp js_single js_wx_tap_highlight wx_tap_card" data-len="1"
+                        role="link" tabindex="0"
+            aria-labelledby="js_article-tag-card__left js_a11y_comma js_article-tag-card__right"
+                      >
+                          
+                                                <span aria-hidden="true" id="js_article-tag-card__left" class="article-tag-card__left">
+                    <span class="article-tag-card__title">收录于合集</span>
+                    <span class="article-tag__item-wrp no-active js_tag" data-url="https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzkyNTIyNzIyMA==&amp;action=getalbum&amp;album_id=1868967994404421636#wechat_redirect" data-tag_id="" data-album_id="1868967994404421636" data-tag_source="4">
+                      <span class="article-tag__item">#方法开发及优化</span>
+                    </span>
+                  </span>
+                  <span aria-hidden="true" id="js_article-tag-card__right" class="article-tag-card__right">46个</span>
+                                                    </div>
+
+          
+                    
+                                        
+
+          
+                    
+
+          
+                              
+                                        
+                    
+                    
+          
+
+          
+          
+                                                  <div class="rich_media_content             defaultNoSetting
+            "
+            id="js_content" style=";"><p>同样一个药典分析方法，很简单的色谱条件，有些实验室能重现，有些实验室不能重现，其中，多数不能重现药典方法的原因是没正确选择色谱柱，此时有必要了解下如何检索USP和EP色谱柱，详见<a target="_blank" href="http://mp.weixin.qq.com/s?__biz=MzkyNTIyNzIyMA==&amp;mid=2247484630&amp;idx=1&amp;sn=7612d3733baa3bedfb3bb06bc4bb0d7f&amp;chksm=c1c8856df6bf0c7bdde77640f70b79e5bb68af02b9025594d87940e9fc2f272b65a1f200a8d2&amp;scene=21#wechat_redirect" textvalue="检索EP和USP收载的色谱柱" linktype="text" imgurl="" imgdata="null" data-itemshowtype="0" tab="innerlink" data-linktype="2">检索EP和USP收载的色谱柱</a></p><p><br  /></p><p><span style="color: rgb(51, 51, 51);font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;font-weight: 400;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;text-decoration-style: initial;text-decoration-color: initial;display: inline !important;float: none;">本文分享一个案例，各国药典的色谱条件都是一致，重现过程中一直存在未知杂质，</span><span style="font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;font-weight: 400;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;text-decoration-style: initial;text-decoration-color: initial;float: none;color: rgb(255, 0, 0);display: inline !important;">与有该项目经验的朋友探讨，貌似该问题为本实验室特有</span></p><p><br  /></p><p><span style="color: rgb(0, 82, 255);">调查结果，主成分与容量瓶不相容，</span><span style="color: rgb(0, 82, 255);"><span style="color: rgb(0, 82, 255);font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;font-weight: 400;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;text-decoration-style: initial;text-decoration-color: initial;float: none;display: inline !important;">魔鬼就是容量瓶材质</span></span></p><p><br  /></p><p><img class="rich_pages wxw-img" data-backh="231" data-backw="554" data-galleryid="" data-ratio="0.41696750902527074" data-s="300,640" data-type="png" data-w="554" style="width: 100%;height: auto !important;" src="data:image/jpeg;base64,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"  /></p><p><br  /></p><p>1、如上图，使用玻璃材质的容量瓶，产生未知杂质，其中，<span style="color: rgb(255, 0, 0);">100ml和50ml的容量瓶有未知杂质，20ml和10ml的容量瓶没有未知杂质</span>，<span style="color: rgb(0, 82, 255);">也即不同<span style="color: rgb(0, 82, 255);font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;font-weight: 400;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;text-decoration-style: initial;text-decoration-color: initial;float: none;display: inline !important;">玻璃材质的容量瓶不同厂家的质量也不同</span></span></p><p><br  /></p><p>2、使用塑料材质的容量瓶（塑料材质），没有未知杂质</p><p><br  /></p><p><span style="color: rgb(51, 51, 51);font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;font-weight: 400;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;text-decoration-style: initial;text-decoration-color: initial;display: inline !important;float: none;">3、方法转移，接收方实验室同样使用玻璃材质的容量瓶，没有未知杂质。经了解，接收方的容量瓶单个价格很高（进口）</span></p><p><span style="color: rgb(51, 51, 51);font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;font-weight: 400;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;text-decoration-style: initial;text-decoration-color: initial;display: inline !important;float: none;"><br  /></span></p><p><span style="font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;float: none;color: rgb(64, 188, 191);display: inline !important;font-weight: bold;">文献预警:&nbsp;</span><span style="color: rgb(64, 188, 191);font-weight: bold;"><span style="font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;float: none;display: inline !important;">参比制剂为注射液，</span><span style="font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;float: none;display: inline !important;">包材为塑料安瓿瓶。</span><span style="font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;float: none;display: inline !important;">通常玻璃安瓿瓶是首选，该信息提示有可能本品与玻璃材质的不相容（另一个实验:&nbsp;</span><span style="margin: 0px;padding: 0px;font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;float: none;display: inline !important;">API溶液置于西林瓶中，溶液浑浊</span><span style="font-family: mp-quote, -apple-system-font, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;PingFang SC&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;font-size: 17px;font-style: normal;font-variant-ligatures: normal;font-variant-caps: normal;letter-spacing: normal;orphans: 2;text-align: justify;text-indent: 0px;text-transform: none;widows: 2;word-spacing: 0px;-webkit-text-stroke-width: 0px;float: none;display: inline !important;">）</span></span></p><p><br  /></p><p><strong>小结：实验室至少配备一套质量好的玻璃材质容量瓶或塑料材质的容量瓶</strong></p><p><br  /></p><p style="display: none;"><mp-style-type data-value="10000"></mp-style-type></p></div>
+
+          <script type="text/javascript" nonce="1176578612" reportloaderror>
+            var first_sceen__time = (+new Date());
+            if ("" == 1 && document.getElementById('js_content')) {
+              document.getElementById('js_content').addEventListener("selectstart",function(e){ e.preventDefault(); });
+            }
+          </script>
+        </div>
+                        <div id="js_tags_preview_toast" class="article-tag__error-tips" style="display: none;">预览时标签不可点</div>
+                
+        <div id="content_bottom_area" class="rich_media_tool_area"></div>
+
+              </div>
+    </div>
+
+    <div class="rich_media_area_primary sougou" id="sg_tj" style="display:none"></div>
+
+    
+    <div class="rich_media_area_extra">
+      <div class="rich_media_area_extra_inner">
+        
+        <div id="page_bottom_area"></div>
+      </div>
+    </div>
+
+    
+    <div id="js_pc_qr_code" class="qr_code_pc_outer" style="display:none;">
+      <div class="qr_code_pc_inner">
+        <div class="qr_code_pc">
+          <img id="js_pc_qr_code_img" class="qr_code_pc_img">
+          <p>微信扫一扫<br>关注该公众号</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<div class="wx_network_msg_wrp" id="js_network_msg_wrp"></div>
+
+
+<script type="text/html" id="js_network_msg_load" nonce="1176578612" reportloaderror>
+  <div class="wx_network_msg">
+    <span role="img" aria-label="加载中" class="weui-primary-loading">
+      <span class="weui-primary-loading__dot"></span>
+    </span>
+  </div>
+</script>
+
+
+<script type="text/html" id="js_network_msg_load_err" nonce="1176578612" reportloaderror>
+  <div class="wx_network_msg">因网络连接问题，剩余内容暂无法加载。</div>
+</script>
+
+
+<div class="comment_primary_emotion_panel_wrp" id="js_emotion_panel_pc" style="display: none">
+  <div class="comment_primary_emotion_panel">
+    <ul class="comment_primary_emotion_list_pc" id="js_emotion_list_pc">
+    </ul>
+  </div>
+</div>
+
+
+<div class="weui-dialog__wrp" id="js_alert_panel" style="display:none;">
+  <div class="weui-mask"></div>
+  <div class="weui-dialog">
+    <div class="weui-dialog__bd" id="js_alert_content"></div>
+    <div class="weui-dialog__ft">
+      <a href="javascript:;" class="weui-dialog__btn weui-dialog__btn_default" id="js_alert_confirm">知道了</a>
+    </div>
+  </div>
+</div>
+
+
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+  window.img_popup = 1; // 全量小程序弹窗
+</script>
+
+
+<div id="js_pc_weapp_code" class="weui-desktop-popover weui-desktop-popover_pos-up-center weui-desktop-popover_img-text" style="display: none;">
+  <div class="weui-desktop-popover__content">
+      <div class="weui-desktop-popover__desc">
+          <img id="js_pc_weapp_code_img">
+          微信扫一扫<br>使用小程序<span id="js_pc_weapp_code_des"></span>
+      </div>
+  </div>
+</div>
+<div id="js_minipro_dialog" role="dialog" aria-modal="true" tabindex="0" aria-labelledby="js_minipro_dialog_head" style="display:none;">
+  <div class="weui-mask"></div>
+  <div class="weui-dialog weui-dialog_link">
+      <div class="weui-dialog__hd">
+          <strong class="weui-dialog__title" id="js_minipro_dialog_head" tabindex="0"></strong>
+      </div>
+      <div class="weui-dialog__bd" id="js_minipro_dialog_body"></div>
+      
+      <div class="weui-dialog__ft">
+          <a role="button" id="js_minipro_dialog_cancel" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_default">取消</a>
+          <a role="button" id="js_minipro_dialog_ok" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_primary">允许</a>
+      </div>
+  </div>
+</div>
+<div id="js_link_dialog" role="dialog" aria-modal="true" tabindex="0" aria-labelledby="js_link_dialog_body" style="display:none;">
+  <div class="weui-mask"></div>
+  <div class="weui-dialog weui-dialog_link">
+    <div class="weui-dialog__hd">
+      <strong class="weui-dialog__title" id="js_link_dialog_head" tabindex="0"></strong>
+    </div>
+    <div class="weui-dialog__bd" id="js_link_dialog_body" tabindex="0"></div>
+    
+    <div class="weui-dialog__ft">
+      <a role="button" id="js_link_dialog_cancel" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_default">取消</a>
+      <a role="button" id="js_link_dialog_ok" href="javascript:void(0);" class="weui-dialog__btn weui-dialog__btn_primary">允许</a>
+    </div>
+  </div>
+</div>
+
+
+
+    <script type="text/javascript" nonce="1176578612" reportloaderror>
+window.logs.pagetime.page_begin = Date.now();
+
+// // 广告iframe预加载
+try {
+  var adIframeUrl = localStorage.getItem('__WXLS_ad_iframe_url');
+  if (window === top) {
+    if (adIframeUrl) {
+      if (navigator.userAgent.indexOf('iPhone') > -1) {
+        var img = new Image();
+        img.src = adIframeUrl;
+      } else {
+        var link = document.createElement('link');
+        link.rel = 'prefetch';
+        link.href = adIframeUrl;
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+    }
+  }
+} catch (err) {
+
+}
+</script>
+    
+
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_colon">：</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_comma">，</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_period">。</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_space">&nbsp;</span>
+
+
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_type_video">视频</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_type_weapp">小程序</span>
+
+
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_zan_btn_txt">赞</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_zan_btn_tips">，轻点两下取消赞</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_like_btn_txt">在看</span>
+<span aria-hidden="true" class="weui-a11y_ref" style="display:none" id="js_a11y_like_btn_tips">，轻点两下取消在看</span>
+
+    <script type="text/javascript" nonce="1176578612" reportloaderror>
+(function () {
+  var totalCount = 0,
+    finishCount = 0;
+
+  function _addVConsole(uri, cb) {
+    totalCount++;
+    var node = document.createElement('SCRIPT');
+    node.type = 'text/javascript';
+    node.src = uri;
+    node.setAttribute('nonce', '1176578612');
+    if (cb) {
+      node.onload = cb;
+    }
+    document.getElementsByTagName('head')[0].appendChild(node);
+  }
+  if (
+    (document.cookie && document.cookie.indexOf('vconsole_open=1') > -1)
+    || location.href.indexOf('vconsole=1') > -1
+  ) {
+    _addVConsole('https://mp.weixin.qq.com/mmbizappmsg/zh_CN/htmledition/js/scripts/vconsole-3.14.6.js', function () {
+      var vConsole = new window.VConsole();
+    });
+  }
+
+})();
+</script>
+    
+    <script type="text/javascript" nonce="1176578612" reportloaderror>var __INLINE_SCRIPT__=function(){"use strict";var e=function(e,n){var t=e;if(e.indexOf("——")>-1){e=e.replace(/——/g,'<span style="letter-spacing:normal">——</span>')}n&&(n.innerHTML=n.innerHTML.replace(t,e))};if(!window.__second_open__){e("细节藏魔鬼:容量瓶不相容引入杂质",document.getElementById("activity-name")),window.__setTitle=e}return e}();</script><script type="text/javascript" nonce="1176578612" reportloaderror>var __INLINE_SCRIPT__=function(){"use strict";var e=function(e,t,n,i){var _=new Date(1e3*(1*t)),o=function(e){return"0".concat(e).slice(-2)},r=_.getFullYear()+"-"+o(_.getMonth()+1)+"-"+o(_.getDate())+" "+o(_.getHours())+":"+o(_.getMinutes());i&&(i.innerText=r)};if(!window.__second_open__){e(0,"1666223137",0,document.getElementById("publish_time")),window.__setPubTime=e}return e}();</script>
+
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+//兼容 IE
+if (!window.console) window.console = { log: function() {} };
+// 图片占位 @ekili
+if (typeof getComputedStyle == 'undefined') {
+  if (document.body.currentStyle) {
+    window.getComputedStyle = function(el) {
+      return el.currentStyle;
+    }
+  } else {
+    window.getComputedStyle = {};
+  }
+}
+// 图片和视频预加载逻辑，记得H5和秒开要对齐逻辑
+(function(){
+  window.__zoom = 1;
+
+  var ua = navigator.userAgent.toLowerCase();
+  var re = new RegExp("msie ([0-9]+[\.0-9]*)");
+  var version;
+  if (re.exec(ua) != null) {
+    version = parseInt(RegExp.$1);
+  }
+  var isIE = false;
+  if (typeof version != 'undefined' && version >= 6 && version <= 9) {
+    isIE = true;
+  }
+  var isAccessibilityKey = 'isMpUserAccessibility';
+  var isAccessMode = window.localStorage.getItem(isAccessibilityKey);
+  var isCarton = isIE || '0' === '1' || '' === '1' || isAccessMode === '1';
+
+  var bodyWidth = '' * 1;
+  if (bodyWidth) {
+    var styles = getComputedStyle(document.getElementById('page-content'));
+    bodyWidth - parseFloat(styles.paddingLeft) - parseFloat(styles.paddingRight);
+  }
+  var getMaxWith = function () {
+    var container = document.getElementById('img-content');
+    var max_width = container.offsetWidth;
+    !max_width && bodyWidth && (max_width = bodyWidth);
+    var container_padding = 0;
+    var container_style = getComputedStyle(container);
+    container_padding = parseFloat(container_style.paddingLeft) + parseFloat(container_style.paddingRight);
+    max_width -= container_padding;
+    if (!max_width) {
+      max_width = window.innerWidth - 30;      //防止offsetTop不可用，30为padding
+    }
+    return max_width;
+  };
+  var getParentWidth = function (dom) {
+    var parent_width = 0;
+    var parent = dom.parentNode;
+    var outerWidth = 0;
+    while (true) {
+      if (!parent || parent.nodeType != 1) break;
+      var parent_style = getComputedStyle(parent);
+      if (!parent_style) break;
+      parent_width = parent.clientWidth - parseFloat(parent_style.paddingLeft) - parseFloat(parent_style.paddingRight) - outerWidth;
+      if (parent_width > 16) break; // 16是占位loading的宽度，所以要大于16
+      outerWidth += parseFloat(parent_style.paddingLeft) + parseFloat(parent_style.paddingRight) + parseFloat(parent_style.marginLeft) + parseFloat(parent_style.marginRight) + parseFloat(parent_style.borderLeftWidth) + parseFloat(parent_style.borderRightWidth);
+      parent = parent.parentNode;
+    }
+    return parent_width;
+  }
+  var getOuterW = function (dom) {
+    var style = getComputedStyle(dom),
+      w = 0;
+    if (!!style) {
+      w = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight) + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth);
+    }
+    return w;
+  };
+  var getOuterH = function (dom) {
+    var style = getComputedStyle(dom),
+      h = 0;
+    if (!!style) {
+      h = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom) + parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    }
+    return h;
+  };
+  var insertAfter = function (dom, afterDom) {
+    var _p = afterDom.parentNode;
+    if (!_p) {
+      return;
+    }
+    if (_p.lastChild === afterDom) {
+      _p.appendChild(dom);
+    } else {
+      _p.insertBefore(dom, afterDom.nextSibling);
+    }
+  };
+  var getQuery = function (name, url) {
+    //参数：变量名，url为空则表从当前页面的url中取
+    var u = arguments[1] || window.location.search,
+      reg = new RegExp("(^|&)" + name + "=([^&]*)(&|$)"),
+      r = u.substr(u.indexOf("\?") + 1).match(reg);
+    return r != null ? r[2] : "";
+  };
+
+  /**
+    * 设置图片size
+    *
+    * @param {HTMLElement} item             图片元素
+    * @param {number} widthNum         宽度数值
+    * @param {string} widthUnit        宽度单位
+    * @param {number} ratio            宽高比
+    * @param {boolean} breakParentWidth 是否突破父元素宽度(父元素是否被撑大)
+    */
+  function setImgSize(item, widthNum, widthUnit, ratio, breakParentWidth) {
+    setTimeout(function () {
+      var img_padding_border = getOuterW(item) || 0;
+      var img_padding_border_top_bottom = getOuterH(item) || 0;
+
+      // 如果设置的宽度超过了父元素最大宽度，则取父元素宽度
+      if (widthNum > getParentWidth(item) && !breakParentWidth) {
+        widthNum = getParentWidth(item);
+      }
+
+      var height = (widthNum - img_padding_border) * ratio + img_padding_border_top_bottom;
+
+      if (isCarton) { // 判一下是不是漫画原创，如果是，不走懒加载
+        var url = item.getAttribute('src');
+        item.src = url;
+
+        // 不走懒加载但是需要跟懒加载一样去除占位高度
+        item.style.height = 'auto';
+      } else {
+        // if (parseFloat(widthNum, 10) > 40 && height > 40 && breakParentWidth) {
+        //   item.className += ' img_loading';
+        // }
+        // item.src = "data:image/gif;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQImWNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg==";
+        widthNum !== 'auto' && (item.style.cssText += ";width: " + widthNum + widthUnit + " !important;");
+        widthNum !== 'auto' && (item.style.cssText += ";height: " + height + widthUnit + " !important;");
+      }
+    }, 10);
+  }
+  // 图片和视频预加载逻辑，记得H5和秒开要对齐逻辑
+  (function () {
+    var images = document.getElementsByTagName('img');
+    var length = images.length;
+    var max_width = getMaxWith();
+    for (var i = 0; i < length; ++i) {
+      if (window.__second_open__ && images[i].getAttribute('__sec_open_place_holder__')) {
+        continue;
+      }
+      var imageItem = images[i];
+      var imgPlaceHolder = document.createElement('span');
+      var src_ = imageItem.getAttribute('src');
+      var realSrc = imageItem.getAttribute('src');
+      if (!src_ || realSrc) continue;
+      // 图片原始宽度
+      var originWidth = imageItem.getAttribute('data-w');
+      var ratio_ = 1 * imageItem.getAttribute('data-ratio');
+
+      imageItem.setAttribute('data-index', i);
+
+      var height = 100;
+      if (ratio_ && ratio_ > 0) {
+        // 非漫画才需要占位
+        if (!isCarton) {
+          imageItem.setAttribute('data-origin-display', imageItem.style.display);
+          imageItem.style.display = 'none';
+          imgPlaceHolder.className = "js_img_placeholder wx_widget_placeholder";
+          imgPlaceHolder.setAttribute("src", src_ || realSrc);
+          imgPlaceHolder.setAttribute("data-index", i);
+          imgPlaceHolder.innerHTML = '<span class="weui-primary-loading"><span class="weui-primary-loading__dot"></span></span>';
+
+          insertAfter(imgPlaceHolder, imageItem); // 在视频后面插入占位
+        }
+
+        var parent_width = getParentWidth(imageItem) || max_width;
+        var initWidth = imageItem.style.width || imageItem.getAttribute('width') || originWidth || parent_width;
+        initWidth = parseFloat(initWidth, 10) > max_width ? max_width : initWidth;
+        // 有attribute或style中的width，写入_width属性，在图片加载完成时写入img标签
+        if (initWidth) {
+          imageItem.setAttribute('_width', !isNaN(initWidth * 1) ? initWidth + 'px' : initWidth);
+        }
+        // 使用百分比，则计算出像素宽度
+        if (typeof initWidth === 'string' && initWidth.indexOf('%') !== -1) {
+          initWidth = parseFloat(initWidth.replace('%', ''), 10) / 100 * parent_width;
+        }
+        // 使用auto，就是原始宽度
+        if (initWidth === 'auto') {
+          initWidth = originWidth;
+          if (originWidth === 'auto') {
+            initWidth = parent_width;
+          } else {
+            initWidth = originWidth;
+          }
+        }
+
+        var widthNum;
+        var widthUnit;
+        if (initWidth === 'auto') {
+          widthNum = 'auto';
+        } else {
+          var res = /^(\d+(?:\.\d+)?)([a-zA-Z%]+)?$/.exec(initWidth);
+          widthNum = res && res.length >= 2 ? res[1] : 0;
+          widthUnit = res && res.length >= 3 && res[2] ? res[2] : 'px';
+        }
+
+        // 试探一下parent宽度在设置了图片的大小之后是否会变化
+        if (!isCarton) {
+          setImgSize(imgPlaceHolder, widthNum, widthUnit, ratio_, true);
+        } else {
+          setImgSize(imageItem, widthNum, widthUnit, ratio_, true);
+        }
+
+        // // 真正设置宽高
+        // (function (item, widthNumber, unit, ratio) {
+        //   setTimeout(function () {
+        //     setImgSize(item, widthNumber, unit, ratio, false);
+        //   });
+        // })(imageItem, widthNum, widthUnit, ratio_);
+      } else {
+        // 这里使用visibility 而不是display none 是因为没有占位元素，那就让图片自己占位
+        imageItem.style.cssText += "; !important;";
+      }
+    }
+  })();
+  window.__videoDefaultRatio = 16 / 9;//默认值是16/9
+  window.__getVideoWh = function (dom) {
+    var max_width = getMaxWith(),
+      width = max_width,
+      ratio_ = dom.getAttribute('data-ratio') * 1,//mark16/9
+      arr = [4 / 3, 16 / 9],
+      ret = arr[0],
+      abs = Math.abs(ret - ratio_);
+    if (!ratio_) { // 没有比例
+      if (dom.getAttribute("data-mpvid")) { // MP视频
+        ratio_ = 16 / 9;
+      } else { // 非MP视频，需要兼容历史图文
+        ratio_ = 4 / 3;
+      }
+    } else { // 有比例，则判断更接近4/3还是更接近16/9
+      for (var j = 1, jl = arr.length; j < jl; j++) {
+        var _abs = Math.abs(arr[j] - ratio_);
+        if (_abs < abs) {
+          abs = _abs;
+          ret = arr[j];
+        }
+      }
+      ratio_ = ret;
+    }
+
+    var parent_width = getParentWidth(dom) || max_width,
+      width = width > parent_width ? parent_width : width,
+      outerW = getOuterW(dom) || 0,
+      outerH = getOuterH(dom) || 0,
+      videoW = width - outerW,
+      videoH = videoW / ratio_,
+      speedDotH = 12, // 播放器新样式的进度条在最下面，为了避免遮住拖动的点点，需要额外设置高一些
+      height = videoH + outerH + speedDotH;
+
+    return { w: Math.ceil(width), h: Math.ceil(height), vh: videoH, vw: videoW, ratio: ratio_, sdh: speedDotH };
+  };
+
+  // 图片和视频预加载逻辑，记得H5和秒开要对齐逻辑
+  (function () {
+    var iframe = document.getElementsByTagName('iframe');
+    for (var i = 0, il = iframe.length; i < il; i++) {
+      if (window.__second_open__ && iframe[i].getAttribute('__sec_open_place_holder__')) {
+        continue;
+      }
+      var a = iframe[i];
+      var src_ = a.getAttribute('src') || a.getAttribute('src') || "";
+
+      /* if (!/^http(s)*\:\/\/v\.qq\.com\/iframe\/(preview|player)\.html\?/.test(src_)
+        && !/^http(s)*\:\/\/mp\.weixin\.qq\.com\/mp\/readtemplate\?t=pages\/video_player_tmpl/.test(src_)
+      ) {
+        continue;
+      } */
+      var vid = getQuery("vid", src_) || a.getAttribute('data-mpvid');
+      if (!vid) {
+        continue;
+      }
+      vid = vid.replace(/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g, "");//清除前后空格
+      a.removeAttribute('src');
+      a.style.display = "none";
+      var obj = window.__getVideoWh(a),
+        videoPlaceHolderSpan = document.createElement('span');
+
+      videoPlaceHolderSpan.className = "js_img_placeholder wx_widget_placeholder";
+      videoPlaceHolderSpan.setAttribute("data-vid", vid);
+      videoPlaceHolderSpan.innerHTML = '<span class="weui-primary-loading"><span class="weui-primary-loading__dot"></span></span>';
+      videoPlaceHolderSpan.style.cssText = "width: " + obj.w + "px !important;";
+
+      insertAfter(videoPlaceHolderSpan, a); // 在视频后面插入占位
+
+      /* var parentNode = a.parentNode;
+      var copyIframe = a;
+      var index = i; */
+
+      // 由于视频需要加一个转载的来源，所以这里需要提前设置高度
+      function ajax(obj) {
+        var url = obj.url;
+        var xhr = new XMLHttpRequest();
+
+        var data = null;
+        if (typeof obj.data == "object") {
+          var d = obj.data;
+          data = [];
+          for (var k in d) {
+            if (d.hasOwnProperty(k)) {
+              data.push(k + "=" + encodeURIComponent(d[k]));
+            }
+          }
+          data = data.join("&");
+        } else {
+          data = typeof obj.data == 'string' ? obj.data : null;
+        }
+
+        xhr.open('POST', url, true);
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState == 4) {
+            if (xhr.status >= 200 && xhr.status < 400) {
+              obj.success && obj.success(xhr.responseText);
+            } else {
+              obj.error && obj.error(xhr);
+            }
+            obj.complete && obj.complete();
+            obj.complete = null;
+          }
+        };
+        xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+        xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
+        xhr.send(data);
+      }
+
+      var mid = "2247487189" || "" || "";
+      var biz = "MzkyNTIyNzIyMA==" || "";
+      var sessionid = "" || "svr_c07b8b79967";
+      var idx = "1" || "";
+
+      (function sendReq(parentNode, copyIframe, index, vid) {
+        ajax({
+          url: '/mp/videoplayer?vid=' + vid + '&mid=' + mid + '&idx=' + idx + '&__biz=' + biz + '&sessionid=' + sessionid + '&f=json',
+          type: "GET",
+          dataType: 'json',
+          success: function (json) {
+            var ret = JSON.parse(json || '{}');
+            var ori = ret.ori_status;
+            var hit_biz_headimg = ret.hit_biz_headimg + '/64';
+            var hit_nickname = ret.hit_nickname;
+            var hit_username = ret.hit_username;
+            var sourceBiz = ret.source_encode_biz;
+
+            var selfUserName = "gh_68fc12dc9a4c";
+
+            if (ori === 2 && selfUserName !== hit_username) {
+              var videoBar = document.createElement('div');
+              var videoBarHtml = '<div class="wx-edui-video_source_link js_wx_tap_highlight wx_tap_card" id="' + (hit_username + index) + '" data-hit-username="' + hit_username + '" data-hit-biz="' + sourceBiz + '">';
+              videoBarHtml += '<div class="wx-edui-video_source_word">以下视频来源于</div>';
+              videoBarHtml += '<div class="wx-edui-video_account_info">';
+              videoBarHtml += '<div class="wx-edui-video_account_avatar" id="' + (hit_biz_headimg + index) + '" src="' + hit_biz_headimg + '"></div>';
+              videoBarHtml += '<div class="wx-edui-video_account_name">' + hit_nickname + '</div>';
+              videoBarHtml += '<i class="wx-edui-video_account_arrow"></i>';
+              videoBarHtml += '</div>';
+              videoBarHtml += '<div class="wx-edui-video_source_link__layer_mask"></div>';
+              videoBarHtml += '</div>';
+              videoBar.innerHTML = videoBarHtml;
+              var spanContainer = document.getElementById('js_mp_video_container_' + index);
+              if (spanContainer) {
+                spanContainer.parentNode.insertBefore(videoBar, spanContainer);
+              } else if (parentNode.contains && parentNode.contains(copyIframe)) {
+                parentNode.insertBefore(videoBar, copyIframe);
+              } else {
+                parentNode.insertBefore(videoBar, parentNode.firstElementChild);
+              }
+              var avatorEle = document.getElementById(hit_biz_headimg + index);
+              var avatorSrc = avatorEle.dataset.src;
+              console.log('avatorSrc' + avatorSrc);
+              if (ret.hit_biz_headimg) {
+                avatorEle.style.backgroundImage = 'url(' + avatorSrc + ')';
+              }
+            }
+          },
+          error: function (xhr) {
+          }
+        });
+      })(a.parentNode, a, i, vid);
+
+      a.style.cssText += ";width: " + obj.w + "px !important;";
+      a.setAttribute("width", obj.w);
+      if (window.__zoom != 1) {
+        a.style.display = "block";
+        videoPlaceHolderSpan.style.display = "none";
+        a.setAttribute("_ratio", obj.ratio);
+        a.setAttribute("_vid", vid);
+      } else {
+        videoPlaceHolderSpan.style.cssText += "height: " + (obj.h - obj.sdh) + "px !important;margin-bottom: " + obj.sdh + "px !important;";
+        a.style.cssText += "height: " + obj.h + "px !important;";
+        a.setAttribute("height", obj.h);
+      }
+      a.setAttribute("data-vh", obj.vh);
+      a.setAttribute("data-vw", obj.vw);
+      if (a.getAttribute("data-mpvid")) {
+        a.setAttribute("src", location.protocol + "//mp.weixin.qq.com/mp/readtemplate?t=pages/video_player_tmpl&auto=0&vid=" + vid);
+      } else {
+        a.setAttribute("src", location.protocol + "//v.qq.com/iframe/player.html?vid=" + vid + "&width=" + obj.vw + "&height=" + obj.vh + "&auto=0");
+      }
+    }
+  })();
+
+  (function () {
+    if (window.__zoom != 1) {
+      if (!window.__second_open__) {
+        document.getElementById('page-content').style.zoom = window.__zoom;
+        var a = document.getElementById('activity-name');
+        var b = document.getElementById('meta_content');
+        if (!!a) {
+          a.style.zoom = 1 / window.__zoom;
+        }
+        if (!!b) {
+          b.style.zoom = 1 / window.__zoom;
+        }
+      }
+      var images = document.getElementsByTagName('img');
+      for (var i = 0, il = images.length; i < il; i++) {
+        if (window.__second_open__ && images[i].getAttribute('__sec_open_place_holder__')) {
+          continue;
+        }
+        images[i].style.zoom = 1 / window.__zoom;
+      }
+      var iframe = document.getElementsByTagName('iframe');
+      for (var i = 0, il = iframe.length; i < il; i++) {
+        if (window.__second_open__ && iframe[i].getAttribute('__sec_open_place_holder__')) {
+          continue;
+        }
+        var a = iframe[i];
+        a.style.zoom = 1 / window.__zoom;
+        var src_ = a.getAttribute('src') || "";
+        if (!/^http(s)*\:\/\/v\.qq\.com\/iframe\/(preview|player)\.html\?/.test(src_)
+          && !/^http(s)*\:\/\/mp\.weixin\.qq\.com\/mp\/readtemplate\?t=pages\/video_player_tmpl/.test(src_)
+        ) {
+          continue;
+        }
+        var ratio = a.getAttribute("_ratio");
+        var vid = a.getAttribute("_vid");
+        a.removeAttribute("_ratio");
+        a.removeAttribute("_vid");
+        var vw = a.offsetWidth - (getOuterW(a) || 0);
+        var vh = vw / ratio;
+        var h = vh + (getOuterH(a) || 0)
+        a.style.cssText += "height: " + h + "px !important;"
+        a.setAttribute("height", h);
+        if (/^http(s)*\:\/\/v\.qq\.com\/iframe\/(preview|player)\.html\?/.test(src_)) {
+          a.setAttribute("src", location.protocol + "//v.qq.com/iframe/player.html?vid=" + vid + "&width=" + vw + "&height=" + vh + "&auto=0");
+        }
+        a.style.display = "none";
+        var parent = a.parentNode;
+        if (!parent) {
+          continue;
+        }
+        for (var j = 0, jl = parent.children.length; j < jl; j++) {
+          var child = parent.children[j];
+          if (child.className.indexOf("js_img_placeholder") >= 0 && child.getAttribute("data-vid") == vid) {
+            child.style.cssText += "height: " + h + "px !important;";
+            child.style.display = "";
+          }
+        }
+      }
+    }
+  })();
+})();
+</script><script type="text/javascript" nonce="1176578612" reportloaderror>!function(){"use strict";var t={defaultContentTpl:'<span class="js_img_placeholder wx_widget_placeholder" style="width:#width#px !important;height:#height#px !important;text-indent: 0"><span class="weui-primary-loading"><span class="weui-primary-loading__dot"></span></span>',config:[{querySelector:"redpacketcover",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return decodeURIComponent(t.node.getAttribute("data-coveruri")||"")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return.7854*t.parentWidth},calH:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return this.calW({parentWidth:t.parentWidth})/.73346+27+37},replaceContentCssText:"",outerContainerLeft:'<section style="display:block;font-size:0;text-align:center;margin:16px 0;">',outerContainerRight:"</section>"},{querySelector:"qqmusic",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return(t.node.getAttribute("musicid")||"").replace(/^\s/,"").replace(/\s$/,"")+"_"+t.index},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 88},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpvoice",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=decodeURIComponent(t.node.getAttribute("voice_encode_fileid")||"").replace(/^\s/,"").replace(/\s$/,"");return e+"_"+t.index},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 122},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mppoi",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return t.node.getAttribute("data-id")||""},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 219},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpsearch",genId:function(){return decodeURIComponent("mp-common-search")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 100},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mp-common-search",genId:function(){return decodeURIComponent("mp-common-search")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 100},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpvideosnap",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-type")||"video";return"live"===e?decodeURIComponent(t.node.getAttribute("data-noticeid")||""):decodeURIComponent(t.node.getAttribute("data-id")||"")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-type")||"video",n=t.node.getAttribute("data-width")||"",r=t.node.getAttribute("data-height")||"";if("live"===e||"topic"===e)return t.parentWidth;var i=1,o=0,a=0,d=!1;return 1===(i=n/r)||i===3/4||(i===4/3||i===16/9?d=!0:i<3/4?i=3/4:i>1&&i<4/3?i=1:i>4/3?d=!0:("number"!=typeof i||Object.is(i,NaN))&&(i=1)),t.node.setAttribute("data-ratio",i),t.node.setAttribute("data-isHorizontal",d),o=(a=!0===d?t.parentWidth:window.innerWidth<1024?.65*window.innerWidth:.65*t.parentWidth)/i,t.node.setAttribute("data-computedWidth",a),t.node.setAttribute("data-computedHeight",o),a},calH:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-desc")||"",n=t.node.getAttribute("data-type")||"video",r=t.node.getAttribute("data-computedHeight")||"";switch(n){case"live":return e?152:116;case"topic":return 201;case"image":case"video":return parseFloat(r)}},getBorderRadius:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-type")||"video";return"video"===e?4:8},replaceContentCssText:"",appendContentCssText:"display:flex;margin:16px auto;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mp-wxaproduct",genId:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return decodeURIComponent(t.node.getAttribute("data-wxaproduct-productid")||"")},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},e=t.node.getAttribute("data-wxaproduct-cardtype")||"";return"mini"===e?124:466},replaceContentCssText:"",appendContentCssText:"margin:16px 0;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mpprofile",genId:function(t){return t.node.getAttribute("data-id")||""},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 143},replaceContentCssText:"",appendContentCssText:"margin:16px 0 16px;diplay:block;",outerContainerLeft:"",outerContainerRight:""},{querySelector:"mp-common-profile",genId:function(t){return t.node.getAttribute("data-id")||""},calW:function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};return 1*t.parentWidth},calH:function(){return 143},replaceContentCssText:"",appendContentCssText:"margin:16px 0 16px;diplay:block;",outerContainerLeft:"",outerContainerRight:""}]};!function(){var t=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{};if("function"==typeof document.querySelectorAll)for(var e={maxWith:document.getElementById("img-content").getBoundingClientRect().width,idAttr:"data-preloadingid"},n=0,r=t.config.length;n<r;n++)for(var i=t.config[n],o=document.querySelectorAll(i.querySelector),a=0,d=o.length;a<d;a++){var c=o[a],u=c.parentNode.getBoundingClientRect().width;if(u=Math.min(u,e.maxWith),!c.getAttribute("has-insert-preloading")){var l=i.calW({parentWidth:u,node:c}),p=i.calH({parentWidth:u,node:c}),s=i.genId({index:a,node:c}),g="function"==typeof i.getBorderRadius?i.getBorderRadius({index:a,node:c}):8,h=t.defaultContentTpl.replace(/#height#/g,p).replace(/#width#/g,l).replace(/#borderRadius#/g,g),C=document.createElement("div");if(C.innerHTML=h,i.replaceContentCssText){var f=i.replaceContentCssText.replace(/#height#/g,p).replace(/#width#/g,l);C.firstChild.style.cssText=f}else i.appendContentCssText&&(C.firstChild.style.cssText+=i.appendContentCssText);var v=i.outerContainerLeft+C.innerHTML+i.outerContainerRight;C.innerHTML=v,C.firstChild.setAttribute(e.idAttr,s),c.parentNode.insertBefore(C.firstChild,c.nextSibling),c.setAttribute("has-insert-preloading","1")}}}(t)}();</script>
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+function htmlDecode(str) {
+  return str
+    .replace(/&#39;/g, '\'')
+    .replace(/<br\s*(\/)?\s*>/g, '\n')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ');
+}
+
+var uin = '';
+var key = '';
+var pass_ticket = '';
+var new_appmsg = 1;
+var item_show_type = "0";
+var real_item_show_type = "0";
+var can_see_complaint = "0";
+var tid = "";
+var aid = "";
+var clientversion = "";
+var appuin = "MzkyNTIyNzIyMA==" || "";
+var voiceid = "";
+
+var source = "27";
+var ascene = "";
+var subscene = "";
+var sessionid = "" || "svr_c07b8b79967";
+var abtest_cookie = "";
+
+var scene = 75;
+
+var itemidx = "";
+var appmsg_token = "";
+var _copyright_stat = "1";
+var _ori_article_type = "健康_药品";
+
+var is_follow = "";
+var nickname = "小花晒太阳";
+var appmsg_type = "9";
+var ct = "1666223137";
+var user_name = "gh_68fc12dc9a4c";
+var fakeid = "";
+var version = "";
+var is_limit_user = "0";
+var round_head_img = "http://mmbiz.qpic.cn/mmbiz_png/pKdCMcjAEORIuQpvbgbdE2vaD1ibxVbfVCiav9YrQ5LmWBPV8iaIwHsPVV8z9JEVMp1lxo9c8I5sbmbse6qbQUCyg/0?wx_fmt=png";
+var hd_head_img = "http://wx.qlogo.cn/mmhead/Q3auHgzwzM5hibeMRZichLzQQX5ngkEsAwYuaicb8BQWpR6QrlqzFTk6Q/0" || "";
+var ori_head_img_url = "http://wx.qlogo.cn/mmhead/Q3auHgzwzM5hibeMRZichLzQQX5ngkEsAwYuaicb8BQWpR6QrlqzFTk6Q/132";
+var msg_title = '细节藏魔鬼:容量瓶不相容引入杂质'.html(false);
+var msg_desc = htmlDecode("");
+var msg_cdn_url = "https://mmbiz.qpic.cn/mmbiz_jpg/pKdCMcjAEOQicA619oXbKUdRT4PtIf66GEs1xEibhgknZoaYKNbgNCldibxCVovNX4ibkFOTicgkM73r62A48LYBGiaQ/0?wx_fmt=jpeg"; // 首图idx=0时2.35:1 ， 次图idx!=0时1:1
+var cdn_url_1_1 = "https://mmbiz.qlogo.cn/mmbiz_jpg/pKdCMcjAEOQicA619oXbKUdRT4PtIf66G38EIW5gVkNRpM8pZicsJicl8vteEboMRntc81DfJMLfXqWh8L3Jib1yqg/0?wx_fmt=jpeg"; // 1:1比例的封面图
+var cdn_url_235_1 = "https://mmbiz.qlogo.cn/mmbiz_jpg/pKdCMcjAEOQicA619oXbKUdRT4PtIf66GEs1xEibhgknZoaYKNbgNCldibxCVovNX4ibkFOTicgkM73r62A48LYBGiaQ/0?wx_fmt=jpeg"; // 首图idx=0时2.35:1 ， 次图idx!=0时1:1
+// var msg_link = "http://mp.weixin.qq.com/s?__biz=MzkyNTIyNzIyMA==\x26amp;mid=2247487189\x26amp;idx=1\x26amp;sn=638d6951222bf9876eff3c86502c8bac\x26amp;chksm=c1c88f6ef6bf0678f249303ef9ae0240f02d0912e23633905da7346d0222acdd43e663356d62#rd";
+var msg_link = "http://mp.weixin.qq.com/s?__biz=MzkyNTIyNzIyMA==&amp;mid=2247487189&amp;idx=1&amp;sn=638d6951222bf9876eff3c86502c8bac&amp;chksm=c1c88f6ef6bf0678f249303ef9ae0240f02d0912e23633905da7346d0222acdd43e663356d62#rd"; // @radeonwu
+var user_uin = "" * 1;
+var msg_source_url = '';
+var img_format = 'jpeg';
+var srcid = '';
+var req_id = '2521Gwi6I0246zCJYTUeLr9I';
+var networkType;
+var appmsgid = "" || '' || '2247487189';
+var comment_id = "0" || "0" * 1;
+var comment_enabled = "" * 1;
+var open_fansmsg = "1" * 1;
+var is_https_res = ("" * 1) && (location.protocol == "https:");
+var msg_daily_idx = "1" || "";
+var profileReportInfo = "" || "";
+
+var devicetype = "";
+var source_encode_biz = ""; // 转载来源的公众号encode biz
+var source_username = "";
+// var profile_ext_signature = "" || "";
+var reprint_ticket = "";
+var source_mid = "";
+var source_idx = "";
+var source_biz = "";
+var author = "小花晒太阳";
+var author_id = "";
+var reward_wording = "";
+
+
+// 压缩标志位
+var optimizing_flag = "0" * 1;
+
+// 广告灰度实验取消 @add by scotthuang
+// var ad_abtest_padding = "0" * 1;
+
+var show_comment = "";
+var __appmsgCgiData = {
+  wxa_product: "" * 1,
+  wxa_cps: "" * 1,
+  show_msg_voice: "0" * 1,
+  can_use_page: "" * 1,
+  is_wxg_stuff_uin: "0" * 1,
+  card_pos: "",
+  copyright_stat: "1",
+  source_biz: "",
+  hd_head_img: "http://wx.qlogo.cn/mmhead/Q3auHgzwzM5hibeMRZichLzQQX5ngkEsAwYuaicb8BQWpR6QrlqzFTk6Q/0" || (window.location.protocol + "//" + window.location.host + "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/pic/pic_rumor_link617ebb.jpg"),
+  has_red_packet_cover: "0" * 1 || 0,
+  minishopCardData: ""
+};
+var _empty_v = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/audios/empty617ebb.mp3";
+var appmsg_album_info = (function () {
+  var curAlbumId = '';
+  var publicTagInfo = [
+            {
+      title: '方法开发及优化',
+      size: '46' * 1,
+      link: 'https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzkyNTIyNzIyMA==&amp;action=getalbum&amp;album_id=1868967994404421636#wechat_redirect',
+      type: '0' * 1,
+      id: 'https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzkyNTIyNzIyMA==&amp;action=getalbum&amp;album_id=1868967994404421636#wechat_redirect' ? (('https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzkyNTIyNzIyMA==&amp;action=getalbum&amp;album_id=1868967994404421636#wechat_redirect'.match(/[0-9]{8,}/)) ? ('https://mp.weixin.qq.com/mp/appmsgalbum?__biz=MzkyNTIyNzIyMA==&amp;action=getalbum&amp;album_id=1868967994404421636#wechat_redirect'.match(/[0-9]{8,}/))[0] : '') : '',
+      continousReadOn: '1' * 1
+    },
+          ];
+  for (var i = 0; i < publicTagInfo.length; i++) {
+    if (curAlbumId) {
+      if (curAlbumId === publicTagInfo[i].id) {
+        return publicTagInfo[i];
+      }
+    } else {
+      if (publicTagInfo[i].continousReadOn) {
+        return publicTagInfo[i];
+      }
+    }
+  }
+  return {};
+})();
+var copyright_stat = "1" * 1;
+var hideSource = "" * 1;
+
+var pay_fee = "" * 1;
+var pay_timestamp = "";
+var need_pay = "" * 1;
+var is_pay_subscribe = "0" * 1;
+
+var need_report_cost = "0" * 1;
+var use_tx_video_player = "0" * 1;
+var appmsg_fe_filter = "contenteditable";
+
+var friend_read_source = "" || "";
+var friend_read_version = "" || "";
+var friend_read_class_id = "" || "";
+
+var is_only_read = "1" * 1;
+var read_num = "" * 1;
+var like_num = "" * 1;
+var liked = "" == 'true' ? true : false;
+var is_temp_url = "" ? 1 : 0;
+var tempkey = "";
+var send_time = "";
+var icon_emotion_switch = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/emotion/icon_emotion_switch617ebb.svg";
+var icon_emotion_switch_active = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/emotion/icon_emotion_switch_active617ebb.svg";
+var icon_emotion_switch_primary = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/emotion/icon_emotion_switch_primary617ebb.svg";
+var icon_emotion_switch_active_primary = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/emotion/icon_emotion_switch_active_primary617ebb.svg";
+var icon_loading_white = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/common/icon_loading_white617ebb.gif";
+var icon_audio_unread = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/audio/icon_audio_unread617ebb.png";
+var icon_qqmusic_default = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/audio/icon_qqmusic_default617ebb.png";
+var icon_qqmusic_source = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/audio/icon_qqmusic_source617ebb.svg";
+var icon_kugou_source = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/audio/icon_kugou_source617ebb.png";
+
+var topic_default_img = '//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/pic/pic_book_thumb617ebb.png';
+var comment_edit_icon = '//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/common/icon_edit617ebb.png';
+var comment_loading_img = '//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/common/icon_loading_white617ebb.gif';
+var comment_c2c_not_support_img = '//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/pic/pic_discuss_more617ebb.png';
+
+var voice_in_appmsg = {
+  "1": "1"
+  };
+var voiceList = {};
+voiceList={"voice_in_appmsg":[]}
+var reprint_style = '' * 1;
+var reprint_type = '' * 1;
+var wxa_img_alert = "" != 'false';
+
+// 小程序相关数据
+var weapp_sn_arr_json = "" || "";
+
+// 视频号相关数据
+var video_snap_json = "" || "";
+// profile相关数据
+var mp_profile = [
+  ];
+
+// 能力封禁字段
+var ban_scene = "0" * 1;
+
+var svr_time = "1666703284" * 1;
+// 加迁移文章字段, 默认为false
+var is_transfer_msg = "" * 1 || 0;
+
+var malicious_title_reason_id = "0" * 1; // 标题党wording id @radeonwu
+var malicious_content_type = "0" * 1; // 标题党类型 @radeonwu
+
+// 修改错别字逻辑
+var modify_time = "1666223901";
+
+// 限制跳转到公众号profile @radeonwu
+var isprofileblock = "0";
+
+var jumpInfo = [
+        {
+    title: '检索EP和USP收载的色谱柱'.html(false),
+    item_show_type: '0',
+    url: 'http://mp.weixin.qq.com/s?__biz=MzkyNTIyNzIyMA==&amp;amp;mid=2247484630&amp;amp;idx=1&amp;amp;sn=7612d3733baa3bedfb3bb06bc4bb0d7f&amp;amp;chksm=c1c8856df6bf0c7bdde77640f70b79e5bb68af02b9025594d87940e9fc2f272b65a1f200a8d2&amp;amp;scene=21#wechat_redirect'.html(false).html(false), // 后台给的数据被encode了两次
+    subject_name: '小花晒太阳',
+    link_type: 'LINK_TYPE_MP_APPMSG',
+  }
+    ];
+
+var hasRelatedArticleInfo = '0' * 1 || 0; // 有相关阅读的数据 @radeonwu
+var relatedArticleFlag = '' * 1 || 0; // 0不用拓展，为1时拓展3条 @yinshen
+
+var canUseAutoTypeSetting;
+canUseAutoTypeSetting = '0' * 1 || 0; // 可以应用到自动排版样式
+var styleType = '10000';
+var originTypeSetting = '';
+var originStyleType = '';
+var reprintEditable = '';
+var currentSvrStyleType, originSvrStyleType;
+
+if (!isNaN(parseInt(styleType)) && parseInt(styleType) > 0) {
+  currentSvrStyleType = parseInt(styleType);
+} else if (!isNaN(parseInt(canUseAutoTypeSetting))) {
+  currentSvrStyleType = parseInt(canUseAutoTypeSetting);
+} else {
+  currentSvrStyleType = 0;
+}
+
+if (!isNaN(parseInt(originStyleType)) && parseInt(originStyleType) > 0) {
+  originSvrStyleType = parseInt(originStyleType);
+} else if (!isNaN(parseInt(originTypeSetting))) {
+  originSvrStyleType = parseInt(originTypeSetting);
+} else {
+  originSvrStyleType = 0;
+}
+
+// 转载源段后距设置不一致 并且 转载设置为不可编辑才去修改文章段后距显示
+if (reprint_type > 0 && originSvrStyleType !== currentSvrStyleType && parseInt(reprintEditable) === 0) {
+  var dc = document.getElementById('js_content').classList;
+
+  dc.remove('autoTypeSetting');
+  dc.remove('autoTypeSetting24');
+  dc.remove('autoTypeSetting24psection');
+
+  var finalSetting = parseInt(originSvrStyleType); // 优先使用转载设置 做修正
+
+  if (finalSetting === 1) {
+    dc.add('autoTypeSetting');
+  } else if (finalSetting === 2) {
+    dc.add('autoTypeSetting24');
+  } else if (finalSetting === 3) {
+    dc.add('autoTypeSetting24psection');
+  }
+}
+
+window.wxtoken = "777";
+window.is_login = '' * 1; // 把上面的那段代码改一下，方便配置回退
+
+window.__moon_initcallback = function () {
+  if (!!window.__initCatch) {
+    window.__initCatch({
+      idkey: 27611 + 2,
+      startKey: 0,
+      limit: 128,
+      badjsId: 43,
+      reportOpt: {
+        uin: uin,
+        biz: biz,
+        mid: mid,
+        idx: idx,
+        sn: sn
+      },
+      extInfo: {
+        network_rate: 0.01,    //网络错误采样率
+        badjs_rate: 0.1 // badjs上报叠加采样率
+      }
+    });
+  }
+}
+// msg_title != title
+var title = "小花晒太阳";
+
+var is_new_msg = true;
+// var appmsg_like_type = "2" * 1 ? "2" * 1 : 1; //区分点赞和看一看
+// var appmsg_like_type = 2;
+
+var is_wash = '' * 1;
+var topbarEnable = false;
+var enterid = "" * 1 || "" * 1 || parseInt(Date.now() / 1000);
+var reloadid = '' * 1 || parseInt(Date.now() / 1000); // 视频落地页连续播放id
+var reloadseq = '' * 1 || 1; // 连续播放序号
+// var appid_list = ""; // 改图文所在的小程序的appid列表，只在小程序中使用
+var miniprogram_appid = ""; // 该图文所在的小程序的appid
+
+var defaultAvatarUrl = '//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/icon/common/icon_avatar_default617ebb.svg';
+
+document.addEventListener('DOMContentLoaded', function () {
+  window.domCompleteTime = Date.now();
+});
+
+// 记录是否有转载推荐语
+      var hasRecommendMsg = 0;
+  ;
+// 付费阅读
+var isPayTopic = '' * 1;
+  var payTopicPrice = '' * 1;
+var isRemovedFromPayTopic = '' * 1;
+var isPaySubscribe = '0' * 1; // 是否付费文章
+var isPaid = '0' * 1; // 是否已付费
+var isRefund = '' * 1; // 是否已退款
+var payShowIAPPrice = 1; // 是否启用IAP价格显示，用于外币显示
+var payProductId = '' || ''; // 付费金额对应商品ID，用于iOS多币种金额IAP查询
+var previewPercent = '0' || ''; // 试读比例
+var payGiftsCount = '0' * 1 || 0; // 付费赠送数量
+var payDesc = htmlDecode('');
+var payFreeGift = '' * 1 || 0; // 是否是领取付费赠送的用户
+var is_finished_preview = 0; // 是否试读完
+var jump2pay = '' * 1; // 是否跳转到支付按钮的位置
+
+var isFans; // getext里获取数据再塞到这里
+var can_reward = '0' * 1 || 0;
+var is_need_reward = (isPaySubscribe && !isPaid) ? 0 : "0" * 1; // 非付费不可赞赏
+var is_teenager = '' * 1 || 0; //是否处于青少年模式
+var is_care_mode = '' * 1 || 0; //是否处于关怀模式
+
+// 段落投诉
+var anchor_tree_msg = '';
+// Dark Mode
+var colorScheme = ''; // ''|'dark'|'light', 空表示跟随系统
+
+var iapPriceInfo = {
+  };
+var productPayPackage = {
+    iap_price_info: iapPriceInfo
+};
+
+// 漫画原创
+var isCartoonCopyright = '0' * 1; // 是否漫画原创
+
+// 图文朗读
+var show_msg_voice = '' * 1;
+var qnaCardData = '';
+var exptype = '' || '';
+var expsessionid = '' || '';
+
+// 留言相关
+var goContentId = '';
+var goReplyId = '';
+
+var show_related_article = '' * 1; // 是否强制出相关阅读
+var related_article_scene = '' * 1; // 套娃时源头文章的scene
+
+var wwdistype = ''; // 企微场景，industrynews表示行业资讯
+
+// 腾讯视频相关
+window.cgiData = {
+  appImg: '//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/pic/pic_tencent_video617ebb.png',
+}
+
+window.ip_wording = {
+  countryName: '中国',
+  countryId: '156',
+  provinceName: '广东',
+  provinceId: '',
+  cityName: '',
+  cityId: ''
+};
+window.show_ip_wording = '1' * 1;
+</script><script type="text/javascript" nonce="1176578612" reportloaderror>var __INLINE_SCRIPT__=function(){"use strict";var n=function(n){var i=document.getElementById("js_ip_wording_wrp"),o=document.getElementById("js_ip_wording");if(n&&(window.ip_wording={countryName:n.country_name,countryId:n.country_id,provinceName:n.province_name}),window.ip_wording&&i&&o){var r=function(n){var i="";return 156===parseInt(n.countryId,10)?i=n.provinceName:n.countryId&&(i=n.countryName),i}(window.ip_wording);""!==r&&(o.innerHTML=r,i.style.display="inline-block")}};return window.__second_open__||(n(),window.__setIpWording=n),n}();</script><script type="text/javascript" nonce="1176578612" reportloaderror>!function(){"use strict";function e(e,t){if(!(e instanceof t))throw new TypeError("Cannot call a class as a function")}function t(e,t){for(var o=0;o<t.length;o++){var i=t[o];i.enumerable=i.enumerable||!1,i.configurable=!0,"value"in i&&(i.writable=!0),Object.defineProperty(e,i.key,i)}}function o(e,t){return o=Object.setPrototypeOf||function(e,t){return e.__proto__=t,e},o(e,t)}function i(e){return i="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(e){return typeof e}:function(e){return e&&"function"==typeof Symbol&&e.constructor===Symbol&&e!==Symbol.prototype?"symbol":typeof e},i(e)}function r(e,t){if(t&&("object"===i(t)||"function"==typeof t))return t;if(void 0!==t)throw new TypeError("Derived constructors may only return object or undefined");return function(e){if(void 0===e)throw new ReferenceError("this hasn't been initialised - super() hasn't been called");return e}(e)}function n(e){return n=Object.setPrototypeOf?Object.getPrototypeOf:function(e){return e.__proto__||Object.getPrototypeOf(e)},n(e)}function a(e){var t=function(){if("undefined"==typeof Reflect||!Reflect.construct)return!1;if(Reflect.construct.sham)return!1;if("function"==typeof Proxy)return!0;try{return Boolean.prototype.valueOf.call(Reflect.construct(Boolean,[],(function(){}))),!0}catch(e){return!1}}();return function(){var o,i=n(e);if(t){var a=n(this).constructor;o=Reflect.construct(i,arguments,a)}else o=i.apply(this,arguments);return r(this,o)}}if(!window.__second_open__&&window.Darkmode){var s=0;window.Darkmode.extend([function(i){var r=!1,n=document.querySelectorAll("#js_content")[0],s="rich_pages,blockquote_info,blockquote_biz,blockquote_other,blockquote_article,js_jump_icon,h5_image_link,js_banner_container,js_list_container,js_cover,js_tx_video_container,js_product_err_container,js_product_loop_content,js_product_container,img_loading,list-paddingleft-1,list-paddingleft-2,list-paddingleft-3,selectTdClass,noBorderTable,ue-table-interlace-color-single,ue-table-interlace-color-double,__bg_gif,weapp_text_link,weapp_image_link,js_img_loading,wx_video_context,db,wx_video_thumb_primary,wx_video_play_btn,wx_video_mask,qqmusic_area,tc,tips_global,unsupport_tips,qqmusic_wrp,appmsg_card_context,appmsg_card_active,wx_tap_card,js_wx_tap_highlight,wx_tap_link,qqmusic_bd,play_area,icon_qqmusic_switch,pic_qqmusic_default,qqmusic_thumb,access_area,qqmusic_songname,qqmusic_singername,qqmusic_source,js_audio_frame,share_audio_context,flex_context,pages_reset,share_audio_switch,icon_share_audio_switch,share_audio_info,flex_bd,share_audio_title,share_audio_tips,share_audio_progress_wrp,share_audio_progress,share_audio_progress_inner,share_audio_progress_buffer,share_audio_progress_loading,share_audio_progress_loading_inner,share_audio_progress_handle,share_audio_desc,share_audio_length_current,share_audio_length_total,video_iframe,vote_iframe,js_editor_vote_card,res_iframe,card_iframe,js_editor_card,weapp_display_element,js_weapp_display_element,weapp_card,app_context,weapp_card_bd,weapp_card_profile,radius_avatar,weapp_card_avatar,weapp_card_nickname,weapp_card_info,weapp_card_title,weapp_card_thumb_wrp,weapp_card_ft,weapp_card_logo,js_pay_btn,pay,pay__mask,wx_video_loading,js_redpacketcover,js_uneditable,js_uneditablemouseover,js_editor_qqmusic,js_editor_audio,ct_geography_loc_tip,js_poi_entry,subsc_context,subsc_btn,reset_btn,js_subsc_btn,icon_subsc,weui-primary-loading,js_img_placeholder,weui-primary-loading__dot ".split(","),_=[new RegExp("^wxw"),new RegExp("^cps_inner"),new RegExp("^bizsvr_"),new RegExp("^code-snippet"),new RegExp("^wx_"),new RegExp("^wx-")];return function(i){!function(e,t){if("function"!=typeof t&&null!==t)throw new TypeError("Super expression must either be null or a function");e.prototype=Object.create(t&&t.prototype,{constructor:{value:e,writable:!0,configurable:!0}}),Object.defineProperty(e,"prototype",{writable:!1}),t&&o(e,t)}(d,i);var c,p,u,m=a(d);function d(){return e(this,d),m.apply(this,arguments)}return c=d,(p=[{key:"beforeConvertNode",value:function(e){e&&e.tagName&&("iframe"!==e.tagName.toLowerCase()?function(e){var t=e.getAttribute("class");if(t){for(var o=t.split(/\s+/),i=[],r=0,n=o.length;r<n;++r){var a=o[r];if(a&&-1!=s.indexOf(a))i.push(a);else for(var c=0,p=_.length;c<p;c++)if(_[c].test(a)){i.push(a);break}}e.setAttribute("class",i.join(" "))}}(e):"video_ad_iframe"===e.getAttribute("class")&&e.setAttribute("class",""))}},{key:"afterConvertNode",value:function(e){if(!r){var t=navigator.userAgent;/(iPhone|iPad|iPod|iOS|mac\sos)/i.test(t)&&n.classList.add("fix_apple_default_style"),r=!0}if(e.style&&""!==e.style.webkitTextSizeAdjust&&"none"!==e.style.webkitTextSizeAdjust&&(e.style.webkitTextSizeAdjust="inherit"),"animate"===e.tagName&&"height"===e.getAttribute("attributeName")){var o=e.getAttribute("repeatCount");("indefinite"===o||o>"10")&&"click"!==e.getAttribute("begin")&&"click"!==e.getAttribute("end")&&(e.setAttribute("repeatCount","undefined"),e.setAttribute("attributeName","undefined"),(new Image).src="306525_1_1")}}}])&&t(c.prototype,p),u&&t(c,u),Object.defineProperty(c,"prototype",{writable:!1}),d}(i)}]),window.Darkmode.run(document.querySelectorAll("#js_content *"),{mode:"",defaultDarkBgColor:"",error:function(){(new Image).src="125617_0_1"},begin:function(e){(new Image).src="125617_2_1",e&&((new Image).src="125617_4_1"),s=1*new Date},showFirstPage:function(){s=1*new Date-s;var e=0===(document.documentElement.scrollTop||window.pageYOffset||document.body.scrollTop);s<=10?((new Image).src="125617_6_1",e&&((new Image).src="125617_13_1")):s>10&&s<=20?((new Image).src="125617_7_1",e&&((new Image).src="125617_14_1")):s>20&&s<=30?((new Image).src="125617_8_1",e&&((new Image).src="125617_15_1")):s>30&&s<=40?((new Image).src="125617_9_1",e&&((new Image).src="125617_16_1")):s>40&&s<=50?((new Image).src="125617_10_1",e&&((new Image).src="125617_17_1")):s>50&&s<=60?((new Image).src="125617_11_1",e&&((new Image).src="125617_18_1")):((new Image).src="125617_12_1",e&&((new Image).src="125617_19_1"))}}),document.getElementById("js_content").style.visibility="visible"}}();</script>
+
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+(function(_g){
+    _g.appmsg_like_type = "2" * 1 ? "2" * 1 : 1;
+    // _g.appmsg_like_type = 2;
+    _g.clientversion = "";
+    _g.passparam = ""; // 看一看带参数
+    if(!_g.msg_link) {
+      _g.msg_link = "http://mp.weixin.qq.com/s?__biz=MzkyNTIyNzIyMA==&amp;mid=2247487189&amp;idx=1&amp;sn=638d6951222bf9876eff3c86502c8bac&amp;chksm=c1c88f6ef6bf0678f249303ef9ae0240f02d0912e23633905da7346d0222acdd43e663356d62#rd";
+    }
+    _g.appmsg_type = "9"; // 后台图文消息类型
+    _g.devicetype = ""; // devicetype
+    _g.kanyikan_video_educate_pic = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/pic/pic_like_comment_primary617ebb.png";
+    _g.kanyikan_educate_pic = "//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/images/pic/pic_like_comment617ebb.png";
+})(window);
+</script>
+
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+// 企业微信里置灰公众号名称
+(function() {
+  var ua = window.navigator.userAgent;
+  if (/MicroMessenger\/([\d\.]+)/i.test(ua) && /wxwork/i.test(ua)) {
+    var profileName = document.getElementById('js_name');
+    var authorName = document.getElementById('js_author_name');
+    var accountNames = document.getElementsByClassName('account_nickname_inner');
+    if (profileName) {
+      profileName.classList.add('tips_global_primary');
+    }
+    if (authorName) {
+      authorName.classList.add('tips_global_primary');
+    }
+    if (accountNames && accountNames.length) {
+      accountNames[0].classList.add('tips_global_primary');
+    }
+  }
+})();
+</script>
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+// 安卓插入米大师 h5 sdk
+(function() {
+  var ua = navigator.userAgent;
+  if (ua.indexOf("MicroMessenger") != -1 && ua.indexOf("Android") != -1){
+    var script = document.createElement('script');
+    var head = document.getElementsByTagName('head')[0];
+    script.type = 'text/javascript';
+    script.src = "https://midas.gtimg.cn/h5sdk/js/api/h5sdk.js";
+    head.appendChild(script);
+  }
+})();
+</script>
+<script type="text/javascript" nonce="1176578612" reportloaderror>
+var real_show_page_time = +new Date();
+if (!!window.addEventListener){
+  window.addEventListener("load", function(){
+    window.onload_endtime = +new Date();
+  });
+}
+</script>
+
+<script nomodule nonce="1176578612" reportloaderror>new Image().src='66881_111_1&t='+Math.random();</script>
+
+    
+
+
+<script nomodule nonce="1176578612" reportloaderror>!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
+
+<script nomodule id="vite-legacy-entry" src="//res.wx.qq.com/mmbizappmsg/zh_CN/htmledition/js/assets/appmsg-legacy.l9nlhtcx11eab61c.js" nonce="1176578612" reportloaderror>System.import(document.getElementById('vite-legacy-entry').getAttribute('src'))</script>
+
+  </body>
+</html>
+
+
+
